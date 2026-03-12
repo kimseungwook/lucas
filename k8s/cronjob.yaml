@@ -41,9 +41,23 @@ spec:
                   value: "/data/lucas.db"
                 - name: HOME
                   value: "/home/claude"
+                - name: LLM_BACKEND
+                  value: "claude-code"
+                - name: LLM_PROVIDER
+                  value: "anthropic"
+                - name: LLM_MODEL
+                  value: ""
+                - name: LLM_BASE_URL
+                  value: ""
                 # AUTH_MODE: "api-key" (default) or "credentials"
                 - name: AUTH_MODE
                   value: "api-key"
+                - name: LLM_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-auth
+                      key: api-key
+                      optional: true
                 # Option 1: API Key auth (AUTH_MODE=api-key)
                 - name: ANTHROPIC_API_KEY
                   valueFrom:

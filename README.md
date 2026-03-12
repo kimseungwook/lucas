@@ -27,20 +27,32 @@ CronJob agent (`Dockerfile.lucas`):
 
 Required:
 
-- `ANTHROPIC_API_KEY`
 - `SLACK_BOT_TOKEN`
 - `SLACK_APP_TOKEN`
+
+LLM:
+
+- `LLM_BACKEND` (`claude-code` or `openai-compatible`)
+- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`)
+- `LLM_API_KEY` or provider-specific env such as `GROQ_API_KEY` / `KIMI_API_KEY`
+- `LLM_MODEL` for openai-compatible providers
+
+Legacy Claude compatibility:
+
+- `ANTHROPIC_API_KEY`
 
 Common:
 
 - `SRE_MODE` (`autonomous` or `watcher`)
-- `CLAUDE_MODEL` (`sonnet` or `opus`)
+- `CLAUDE_MODEL` (`sonnet` or `opus`, Claude only)
+- `LLM_BASE_URL` (optional; required for providers that do not have a built-in default)
 - `TARGET_NAMESPACE`
 - `TARGET_NAMESPACES` (comma-separated)
 - `SRE_ALERT_CHANNEL` (enables scheduled scans)
 - `SCAN_INTERVAL_SECONDS`
 - `SQLITE_PATH` (default `/data/lucas.db`)
 - `PROMPT_FILE` (default `/app/master-prompt-interactive.md`)
+- OpenAI-compatible interactive mode is reduced-capability; it does not match Claude tool/resume behavior.
 
 ### CronJob agent
 
@@ -48,15 +60,24 @@ Required:
 
 - `TARGET_NAMESPACE`
 - `SRE_MODE` (`autonomous` or `report`)
+- `LLM_BACKEND` (`claude-code` or `openai-compatible`)
+- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`)
+
+If `LLM_BACKEND=claude-code`:
+
 - `AUTH_MODE` (`api-key` or `credentials`)
-
-If `AUTH_MODE=api-key`:
-
-- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_API_KEY` or `LLM_API_KEY`
 
 If `AUTH_MODE=credentials`:
 
 - Mount `credentials.json` at `/secrets/credentials.json` or `$HOME/.claude/.credentials.json`.
+
+If `LLM_BACKEND=openai-compatible`:
+
+- Set `LLM_MODEL`
+- Set `LLM_API_KEY` or provider-specific env
+- Set `LLM_BASE_URL` when the provider requires it
+- Expect report-oriented behavior rather than full Claude-style tool parity
 
 Optional:
 
@@ -73,7 +94,7 @@ Optional:
 
 ## Deployment (interactive agent + dashboard)
 
-1. Create sealed secrets for `claude-auth` and `slack-bot`.
+1. Create sealed secrets for `llm-auth` and `slack-bot`.
 2. Build and push images.
 3. Apply the manifests.
 
@@ -116,4 +137,5 @@ The dashboard shows recent runs, sessions, costs, and runbooks. Configure login 
 ## Notes
 
 - The helper script at `scripts/install.sh` can generate manifests and sealed secrets.
+- `claude-sessions` PVC is only required for Claude resume support.
 - Docs live in `docs/` (VitePress).

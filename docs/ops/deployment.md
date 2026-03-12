@@ -12,7 +12,7 @@ This section covers the interactive Slack agent and dashboard. Choose a deployme
 The baseline manifests live in `k8s/`:
 
 - `namespace.yaml`
-- `pvc.yaml` (creates `lucas-data` and `claude-sessions`)
+- `pvc.yaml` (creates `lucas-data` and `claude-sessions`; the latter is only needed for Claude resume support)
 - `rbac.yaml`
 - `agent-deployment.yaml`
 - `dashboard-deployment.yaml`
@@ -24,9 +24,9 @@ Do not apply `k8s/secret.yaml` or `k8s/slack-bot-secret.yaml` in production. The
 
 Recommended flow:
 
-1. Create a sealed secret for `claude-auth` with key `api-key`.
+1. Create a sealed secret for `llm-auth` with key `api-key`.
 2. Create a sealed secret for `slack-bot` with keys `bot-token`, `app-token`, and optional `alert-channel`.
-3. Apply the sealed secrets.
+3. Apply the generated Secrets or Sealed Secrets.
 
 ## Apply
 
@@ -49,4 +49,4 @@ Open `http://localhost:8080`.
 
 ## Install script
 
-There is a helper at `scripts/install.sh` that can generate sealed secrets and manifests. It runs locally and asks for inputs. Use it if you prefer a guided setup.
+There is a helper at `scripts/install.sh` that can generate secret manifests and workload manifests. It runs locally and asks for inputs. Use it if you prefer a guided setup.

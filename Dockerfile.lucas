@@ -7,6 +7,9 @@ RUN apt-get update && apt-get install -y \
     sqlite3 \
     ca-certificates \
     gnupg \
+    python3 \
+    python3-pip \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js (required for Claude Code)
@@ -28,7 +31,13 @@ RUN useradd -m -s /bin/bash claude
 # Create working directory
 WORKDIR /app
 
+# Create virtual environment and install Python dependencies
+COPY src/agent/main/requirements.txt /app/requirements.txt
+RUN python3 -m venv /app/venv \
+    && /app/venv/bin/pip install --no-cache-dir -r requirements.txt
+
 # Copy lucas files
+COPY src/agent/main/*.py /app/
 COPY src/agent/entrypoint/master-prompt-autonomous.md /app/master-prompt-autonomous.md
 COPY src/agent/entrypoint/master-prompt-report.md /app/master-prompt-report.md
 COPY src/agent/entrypoint/entrypoint.sh /app/entrypoint.sh
@@ -43,6 +52,7 @@ RUN mkdir -p /data /home/claude/.claude \
 ENV TARGET_NAMESPACE=default
 ENV SQLITE_PATH=/data/lucas.db
 ENV HOME=/home/claude
+ENV PATH="/app/venv/bin:$PATH"
 
 # Run as non-root user
 USER claude

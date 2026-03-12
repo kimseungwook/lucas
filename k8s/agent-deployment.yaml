@@ -49,20 +49,33 @@ spec:
             # SRE_MODE: "autonomous" (can make changes) or "watcher" (read-only)
             - name: SRE_MODE
               value: "autonomous"
-            # CLAUDE_MODEL: "sonnet" or "opus" (defaults to sonnet)
+            - name: LLM_BACKEND
+              value: "claude-code"
+            - name: LLM_PROVIDER
+              value: "anthropic"
             - name: CLAUDE_MODEL
               value: "sonnet"
+            - name: LLM_MODEL
+              value: ""
+            - name: LLM_BASE_URL
+              value: ""
             # Database path (shared with dashboard)
             - name: SQLITE_PATH
               value: "/data/lucas.db"
             - name: HOME
               value: "/home/claude"
-            # Anthropic API Key
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-auth
+                  key: api-key
+                  optional: true
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: claude-auth
                   key: api-key
+                  optional: true
             # Slack Bot credentials (required for interactive mode)
             - name: SLACK_BOT_TOKEN
               valueFrom:
@@ -84,6 +97,14 @@ spec:
             # Scan interval in seconds
             - name: SCAN_INTERVAL_SECONDS
               value: "3600"
+            - name: SLACK_EMERGENCY_ACTIONS_ENABLED
+              value: "false"
+            - name: SLACK_ACTION_ALLOWED_CHANNELS
+              value: ""
+            - name: SLACK_ACTION_ALLOWED_USERS
+              value: ""
+            - name: SLACK_ACTION_ALLOWED_NAMESPACES
+              value: ""
             # Prompt file
             - name: PROMPT_FILE
               value: "/app/master-prompt-interactive.md"

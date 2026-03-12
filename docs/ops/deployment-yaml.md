@@ -4,9 +4,9 @@ Use `kubectl apply` to deploy the manifests in `k8s/`.
 
 ## Secrets
 
-Create secrets before applying the deployments. Example flow using sealed secrets:
+Create secrets before applying the deployments. Example flow using direct Kubernetes Secrets or Sealed Secrets:
 
-1. Seal `claude-auth` with key `api-key`.
+1. Seal `llm-auth` with key `api-key`.
 2. Seal `slack-bot` with keys `bot-token`, `app-token`, and optional `alert-channel`.
 
 ## Apply

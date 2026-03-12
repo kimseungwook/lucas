@@ -6,6 +6,11 @@ import os
 from datetime import datetime
 from typing import Callable, Awaitable
 
+try:
+    from .cluster_snapshot import resolve_target_namespaces
+except ImportError:
+    from cluster_snapshot import resolve_target_namespaces
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,8 +39,7 @@ class SREScheduler:
 
     def _get_namespaces_from_env(self) -> list[str]:
         """Get namespaces from environment variable."""
-        ns_env = os.environ.get("TARGET_NAMESPACES", "default")
-        return [ns.strip() for ns in ns_env.split(",") if ns.strip()]
+        return resolve_target_namespaces(os.environ.get("TARGET_NAMESPACE", "default"), os.environ.get("TARGET_NAMESPACES", "default"))
 
     async def start(self):
         """Start the scheduler."""

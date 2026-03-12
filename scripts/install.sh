@@ -24,11 +24,28 @@ NC='\033[0m' # No Color
 # Configuration defaults
 LUCAS_NAMESPACE="a2w-lucas"
 TARGET_NAMESPACE="default"
+TARGET_NAMESPACES="default"
 LUCAS_MODE="autonomous"
+LLM_BACKEND="claude-code"
+LLM_PROVIDER="anthropic"
+LLM_MODEL=""
+LLM_BASE_URL=""
 CLAUDE_MODEL="sonnet"
 SCAN_INTERVAL="3600"
 SEALED_SECRETS_NAMESPACE="sealed-secrets"
 SEALED_SECRETS_CONTROLLER="sealed-secrets-controller"
+SECRET_BACKEND="manual"
+DASHBOARD_ENABLED="true"
+DASHBOARD_HOST=""
+KUBECTL_CONTEXT=""
+IMAGE_REGISTRY="ghcr.io/a2wio"
+IMAGE_PULL_SECRET=""
+SLACK_WEBHOOK_URL=""
+SLACK_ALERT_CHANNEL=""
+SLACK_EMERGENCY_ACTIONS_ENABLED="false"
+SLACK_ACTION_ALLOWED_CHANNELS=""
+SLACK_ACTION_ALLOWED_USERS=""
+SLACK_ACTION_ALLOWED_NAMESPACES=""
 DASHBOARD_USER="admin"
 DASHBOARD_PASS=""
 OUTPUT_DIR="./lucas-k8s"
@@ -68,6 +85,37 @@ print_info() {
     echo -e "${CYAN}ℹ${NC} $1"
 }
 
+normalize_config() {
+    if [ -n "$SRE_ALERT_CHANNEL" ]; then
+        SLACK_ALERT_CHANNEL="$SRE_ALERT_CHANNEL"
+    fi
+    if [ -n "$DASHBOARD_AUTH_USER" ]; then
+        DASHBOARD_USER="$DASHBOARD_AUTH_USER"
+    fi
+    if [ -n "$DASHBOARD_AUTH_PASS" ]; then
+        DASHBOARD_PASS="$DASHBOARD_AUTH_PASS"
+    fi
+    if [ -z "$TARGET_NAMESPACES" ]; then
+        TARGET_NAMESPACES="$TARGET_NAMESPACE"
+    fi
+    TARGET_NAMESPACE="${TARGET_NAMESPACES%%,*}"
+}
+
+load_env_file() {
+    local env_file="$1"
+    if [ ! -f "$env_file" ]; then
+        print_error "Env file not found: $env_file"
+        exit 1
+    fi
+
+    set -a
+    . "$env_file"
+    set +a
+
+    normalize_config
+    print_info "Loaded configuration from $env_file"
+}
+
 check_command() {
     if command -v "$1" &> /dev/null; then
         print_success "$1 found: $(command -v $1)"
@@ -85,26 +133,38 @@ check_prerequisites() {
 
     # Required
     check_command "kubectl" || missing=$((missing + 1))
-    check_command "kubeseal" || missing=$((missing + 1))
+    if [ "$SECRET_BACKEND" = "sealed-secrets" ]; then
+        check_command "kubeseal" || missing=$((missing + 1))
+    fi
 
     # Check cluster connection
     echo ""
-    if kubectl cluster-info &> /dev/null; then
+    if [ -n "$KUBECTL_CONTEXT" ]; then
+        KUBE_ARGS=(--context "$KUBECTL_CONTEXT")
+    else
+        KUBE_ARGS=()
+    fi
+
+    if kubectl "${KUBE_ARGS[@]}" cluster-info &> /dev/null; then
         print_success "Kubernetes cluster is accessible"
-        local context=$(kubectl config current-context 2>/dev/null || echo "unknown")
+        local context="$KUBECTL_CONTEXT"
+        if [ -z "$context" ]; then
+            context=$(kubectl config current-context 2>/dev/null || echo "unknown")
+        fi
         print_info "Current context: ${context}"
     else
         print_error "Cannot connect to Kubernetes cluster"
         missing=$((missing + 1))
     fi
 
-    # Check sealed-secrets controller
-    echo ""
-    if kubectl get deployment -n "$SEALED_SECRETS_NAMESPACE" "$SEALED_SECRETS_CONTROLLER" &> /dev/null; then
-        print_success "Sealed Secrets controller found in namespace '$SEALED_SECRETS_NAMESPACE'"
-    else
-        print_warning "Sealed Secrets controller not found in namespace '$SEALED_SECRETS_NAMESPACE'"
-        print_info "You can specify a different namespace during configuration"
+    if [ "$SECRET_BACKEND" = "sealed-secrets" ]; then
+        echo ""
+        if kubectl "${KUBE_ARGS[@]}" get deployment -n "$SEALED_SECRETS_NAMESPACE" "$SEALED_SECRETS_CONTROLLER" &> /dev/null; then
+            print_success "Sealed Secrets controller found in namespace '$SEALED_SECRETS_NAMESPACE'"
+        else
+            print_warning "Sealed Secrets controller not found in namespace '$SEALED_SECRETS_NAMESPACE'"
+            print_info "You can specify a different namespace during configuration"
+        fi
     fi
 
     if [ $missing -gt 0 ]; then
@@ -113,7 +173,9 @@ check_prerequisites() {
         echo ""
         echo "Please install the missing tools:"
         echo "  - kubectl: https://kubernetes.io/docs/tasks/tools/"
-        echo "  - kubeseal: https://github.com/bitnami-labs/sealed-secrets#kubeseal"
+        if [ "$SECRET_BACKEND" = "sealed-secrets" ]; then
+            echo "  - kubeseal: https://github.com/bitnami-labs/sealed-secrets#kubeseal"
+        fi
         echo ""
         exit 1
     fi
@@ -193,29 +255,43 @@ configure_installation() {
     echo -e "${YELLOW}║${NC}  ${BOLD}PRIVACY NOTICE${NC}                                               ${YELLOW}║${NC}"
     echo -e "${YELLOW}║${NC}                                                                ${YELLOW}║${NC}"
     echo -e "${YELLOW}║${NC}  All credentials you enter are processed ${BOLD}locally only${NC}.        ${YELLOW}║${NC}"
-    echo -e "${YELLOW}║${NC}  They are encrypted using your cluster's Sealed Secrets       ${YELLOW}║${NC}"
-    echo -e "${YELLOW}║${NC}  controller and never leave your machine unencrypted.         ${YELLOW}║${NC}"
+    echo -e "${YELLOW}║${NC}  They are written into local manifests or secrets according   ${YELLOW}║${NC}"
+    echo -e "${YELLOW}║${NC}  to your selected secret backend.                            ${YELLOW}║${NC}"
     echo -e "${YELLOW}║${NC}                                                                ${YELLOW}║${NC}"
     echo -e "${YELLOW}║${NC}  View: ${BLUE}https://github.com/a2wio/lucas/blob/main/scripts/install.sh${NC}  ${YELLOW}║${NC}"
     echo -e "${YELLOW}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 
-    # Sealed Secrets configuration
-    print_info "Sealed Secrets Configuration"
-    prompt_value "Sealed Secrets namespace" "$SEALED_SECRETS_NAMESPACE" SEALED_SECRETS_NAMESPACE
-    prompt_value "Sealed Secrets controller name" "$SEALED_SECRETS_CONTROLLER" SEALED_SECRETS_CONTROLLER
+    print_info "Secret backend"
+    prompt_value "Secret backend (manual/sealed-secrets)" "$SECRET_BACKEND" SECRET_BACKEND
 
-    # Verify sealed secrets is accessible
-    if ! kubectl get deployment -n "$SEALED_SECRETS_NAMESPACE" "$SEALED_SECRETS_CONTROLLER" &> /dev/null; then
-        print_error "Cannot find Sealed Secrets controller at $SEALED_SECRETS_NAMESPACE/$SEALED_SECRETS_CONTROLLER"
-        print_info "Please ensure Sealed Secrets is installed: https://github.com/bitnami-labs/sealed-secrets"
-        exit 1
+    if [ "$SECRET_BACKEND" = "sealed-secrets" ]; then
+        check_command "kubeseal" || {
+            print_error "kubeseal is required when SECRET_BACKEND=sealed-secrets"
+            exit 1
+        }
+
+        print_info "Sealed Secrets Configuration"
+        prompt_value "Sealed Secrets namespace" "$SEALED_SECRETS_NAMESPACE" SEALED_SECRETS_NAMESPACE
+        prompt_value "Sealed Secrets controller name" "$SEALED_SECRETS_CONTROLLER" SEALED_SECRETS_CONTROLLER
+
+        if [ -n "$KUBECTL_CONTEXT" ]; then
+            KUBE_ARGS=(--context "$KUBECTL_CONTEXT")
+        else
+            KUBE_ARGS=()
+        fi
+
+        if ! kubectl "${KUBE_ARGS[@]}" get deployment -n "$SEALED_SECRETS_NAMESPACE" "$SEALED_SECRETS_CONTROLLER" &> /dev/null; then
+            print_error "Cannot find Sealed Secrets controller at $SEALED_SECRETS_NAMESPACE/$SEALED_SECRETS_CONTROLLER"
+            print_info "Please ensure Sealed Secrets is installed: https://github.com/bitnami-labs/sealed-secrets"
+            exit 1
+        fi
     fi
 
     echo ""
     print_info "Lucas Configuration"
     prompt_value "Lucas namespace" "$LUCAS_NAMESPACE" LUCAS_NAMESPACE
-    prompt_value "Namespace(s) to monitor (comma-separated)" "$TARGET_NAMESPACE" TARGET_NAMESPACE
+    prompt_value "Namespace(s) to monitor (comma-separated)" "$TARGET_NAMESPACES" TARGET_NAMESPACES
 
     echo ""
     echo "Lucas modes:"
@@ -224,20 +300,34 @@ configure_installation() {
     prompt_value "Lucas mode (autonomous/watcher)" "$LUCAS_MODE" LUCAS_MODE
 
     echo ""
-    echo "Claude models:"
-    echo "  sonnet - Faster, cheaper (\$3/\$15 per 1M tokens)"
-    echo "  opus   - More capable (\$15/\$75 per 1M tokens)"
-    prompt_value "Claude model (sonnet/opus)" "$CLAUDE_MODEL" CLAUDE_MODEL
+    prompt_value "LLM backend (claude-code/openai-compatible)" "$LLM_BACKEND" LLM_BACKEND
+    prompt_value "LLM provider (anthropic/groq/kimi)" "$LLM_PROVIDER" LLM_PROVIDER
+
+    if [ "$LLM_BACKEND" = "claude-code" ]; then
+        echo "Claude models:"
+        echo "  sonnet - Faster, cheaper (\$3/\$15 per 1M tokens)"
+        echo "  opus   - More capable (\$15/\$75 per 1M tokens)"
+        prompt_value "Claude model (sonnet/opus)" "$CLAUDE_MODEL" CLAUDE_MODEL
+    else
+        local default_model="llama-3.3-70b-versatile"
+        local default_base_url="https://api.groq.com/openai/v1"
+        if [ "$LLM_PROVIDER" = "kimi" ]; then
+            default_model="kimi-k2.5"
+            default_base_url="https://api.moonshot.ai/v1"
+        fi
+        prompt_value "LLM model" "$default_model" LLM_MODEL
+        prompt_value "LLM base URL" "$default_base_url" LLM_BASE_URL
+    fi
 
     prompt_value "Scan interval in seconds" "$SCAN_INTERVAL" SCAN_INTERVAL
 
     echo ""
     print_info "API Credentials"
-    echo -e "${CYAN}ℹ${NC} Get your Anthropic API key from: https://console.anthropic.com/"
-    prompt_value "Anthropic API key" "" ANTHROPIC_API_KEY true
+    echo -e "${CYAN}ℹ${NC} Provide the API key for the selected provider"
+    prompt_value "LLM API key" "" LLM_API_KEY true
 
-    if [ -z "$ANTHROPIC_API_KEY" ]; then
-        print_error "Anthropic API key is required"
+    if [ -z "$LLM_API_KEY" ]; then
+        print_error "LLM API key is required"
         exit 1
     fi
 
@@ -260,6 +350,11 @@ configure_installation() {
     fi
 
     prompt_value "Slack Alert Channel ID (optional, e.g., C0123456789)" "" SLACK_ALERT_CHANNEL
+    prompt_value "Slack webhook URL (optional)" "$SLACK_WEBHOOK_URL" SLACK_WEBHOOK_URL true
+    prompt_value "Slack emergency actions enabled (true/false)" "$SLACK_EMERGENCY_ACTIONS_ENABLED" SLACK_EMERGENCY_ACTIONS_ENABLED
+    prompt_value "Slack action allowed channel IDs (comma-separated, empty=all)" "$SLACK_ACTION_ALLOWED_CHANNELS" SLACK_ACTION_ALLOWED_CHANNELS
+    prompt_value "Slack action allowed user IDs (comma-separated, empty=all)" "$SLACK_ACTION_ALLOWED_USERS" SLACK_ACTION_ALLOWED_USERS
+    prompt_value "Slack action allowed namespaces (comma-separated, empty=all)" "$SLACK_ACTION_ALLOWED_NAMESPACES" SLACK_ACTION_ALLOWED_NAMESPACES
 
     echo ""
     print_info "Dashboard Configuration"
@@ -270,13 +365,38 @@ configure_installation() {
     prompt_value "Dashboard password" "$default_pass" DASHBOARD_PASS true
 
     echo ""
+    print_info "Image and cluster configuration"
+    prompt_value "Kubernetes context (optional)" "$KUBECTL_CONTEXT" KUBECTL_CONTEXT
+    prompt_value "Image registry" "$IMAGE_REGISTRY" IMAGE_REGISTRY
+    prompt_value "Image pull secret (optional)" "$IMAGE_PULL_SECRET" IMAGE_PULL_SECRET
+
+    echo ""
     prompt_value "Output directory for manifests" "$OUTPUT_DIR" OUTPUT_DIR
+
+    normalize_config
 }
 
 generate_manifests() {
     print_step "Generating Kubernetes manifests"
 
+    normalize_config
+
     mkdir -p "$OUTPUT_DIR"
+
+    local image_pull_secrets=""
+    if [ -n "$IMAGE_PULL_SECRET" ]; then
+        image_pull_secrets="
+      imagePullSecrets:
+        - name: ${IMAGE_PULL_SECRET}"
+    fi
+
+    local cron_image_pull_secrets=""
+    if [ -n "$IMAGE_PULL_SECRET" ]; then
+        cron_image_pull_secrets="
+          imagePullSecrets:
+            - name: ${IMAGE_PULL_SECRET}
+"
+    fi
 
     # namespace.yaml
     cat > "$OUTPUT_DIR/namespace.yaml" << EOF
@@ -306,6 +426,9 @@ rules:
     resources: ["pods", "pods/status"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+  - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get", "list"]
   - apiGroups: [""]
@@ -315,8 +438,17 @@ rules:
     resources: ["events"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/status", "deployments/scale", "statefulsets", "statefulsets/status", "statefulsets/scale"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -361,56 +493,89 @@ spec:
 EOF
     print_success "Generated pvc.yaml"
 
-    # Generate sealed secrets
-    print_info "Creating sealed secrets..."
+    if [ "$SECRET_BACKEND" = "sealed-secrets" ]; then
+        print_info "Creating sealed secrets..."
 
-    # Claude API key secret
-    kubectl create secret generic claude-auth \
-        --namespace="$LUCAS_NAMESPACE" \
-        --from-literal=api-key="$ANTHROPIC_API_KEY" \
-        --dry-run=client -o yaml | \
-        kubeseal --controller-namespace="$SEALED_SECRETS_NAMESPACE" \
-                 --controller-name="$SEALED_SECRETS_CONTROLLER" \
-                 --format=yaml > "$OUTPUT_DIR/sealed-claude-auth.yaml"
-    print_success "Generated sealed-claude-auth.yaml"
+        kubectl create secret generic llm-auth \
+            --namespace="$LUCAS_NAMESPACE" \
+            --from-literal=api-key="$LLM_API_KEY" \
+            --dry-run=client -o yaml | \
+            kubeseal --controller-namespace="$SEALED_SECRETS_NAMESPACE" \
+                     --controller-name="$SEALED_SECRETS_CONTROLLER" \
+                     --format=yaml > "$OUTPUT_DIR/sealed-llm-auth.yaml"
+        print_success "Generated sealed-llm-auth.yaml"
 
-    # Slack secrets
-    local slack_secret_args="--from-literal=bot-token=$SLACK_BOT_TOKEN --from-literal=app-token=$SLACK_APP_TOKEN"
-    if [ -n "$SLACK_ALERT_CHANNEL" ]; then
-        slack_secret_args="$slack_secret_args --from-literal=alert-channel=$SLACK_ALERT_CHANNEL"
+        local slack_secret_args="--from-literal=bot-token=$SLACK_BOT_TOKEN --from-literal=app-token=$SLACK_APP_TOKEN"
+        if [ -n "$SLACK_ALERT_CHANNEL" ]; then
+            slack_secret_args="$slack_secret_args --from-literal=alert-channel=$SLACK_ALERT_CHANNEL"
+        fi
+
+        kubectl create secret generic slack-bot \
+            --namespace="$LUCAS_NAMESPACE" \
+            $slack_secret_args \
+            --dry-run=client -o yaml | \
+            kubeseal --controller-namespace="$SEALED_SECRETS_NAMESPACE" \
+                     --controller-name="$SEALED_SECRETS_CONTROLLER" \
+                     --format=yaml > "$OUTPUT_DIR/sealed-slack-bot.yaml"
+        print_success "Generated sealed-slack-bot.yaml"
+
+        kubectl create secret generic dashboard-auth \
+            --namespace="$LUCAS_NAMESPACE" \
+            --from-literal=username="$DASHBOARD_USER" \
+            --from-literal=password="$DASHBOARD_PASS" \
+            --dry-run=client -o yaml | \
+            kubeseal --controller-namespace="$SEALED_SECRETS_NAMESPACE" \
+                     --controller-name="$SEALED_SECRETS_CONTROLLER" \
+                     --format=yaml > "$OUTPUT_DIR/sealed-dashboard-auth.yaml"
+        print_success "Generated sealed-dashboard-auth.yaml"
+
+        if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            kubectl create secret generic slack-webhook \
+                --namespace="$LUCAS_NAMESPACE" \
+                --from-literal=webhook-url="$SLACK_WEBHOOK_URL" \
+                --dry-run=client -o yaml | \
+                kubeseal --controller-namespace="$SEALED_SECRETS_NAMESPACE" \
+                         --controller-name="$SEALED_SECRETS_CONTROLLER" \
+                         --format=yaml > "$OUTPUT_DIR/sealed-slack-webhook.yaml"
+            print_success "Generated sealed-slack-webhook.yaml"
+        fi
+    else
+        print_info "Creating direct Kubernetes Secret manifests..."
+
+        kubectl create secret generic llm-auth \
+            --namespace="$LUCAS_NAMESPACE" \
+            --from-literal=api-key="$LLM_API_KEY" \
+            --dry-run=client -o yaml > "$OUTPUT_DIR/secret-llm-auth.yaml"
+        print_success "Generated secret-llm-auth.yaml"
+
+        local slack_secret_args="--from-literal=bot-token=$SLACK_BOT_TOKEN --from-literal=app-token=$SLACK_APP_TOKEN"
+        if [ -n "$SLACK_ALERT_CHANNEL" ]; then
+            slack_secret_args="$slack_secret_args --from-literal=alert-channel=$SLACK_ALERT_CHANNEL"
+        fi
+
+        kubectl create secret generic slack-bot \
+            --namespace="$LUCAS_NAMESPACE" \
+            $slack_secret_args \
+            --dry-run=client -o yaml > "$OUTPUT_DIR/secret-slack-bot.yaml"
+        print_success "Generated secret-slack-bot.yaml"
+
+        kubectl create secret generic dashboard-auth \
+            --namespace="$LUCAS_NAMESPACE" \
+            --from-literal=username="$DASHBOARD_USER" \
+            --from-literal=password="$DASHBOARD_PASS" \
+            --dry-run=client -o yaml > "$OUTPUT_DIR/secret-dashboard-auth.yaml"
+        print_success "Generated secret-dashboard-auth.yaml"
+
+        if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            kubectl create secret generic slack-webhook \
+                --namespace="$LUCAS_NAMESPACE" \
+                --from-literal=webhook-url="$SLACK_WEBHOOK_URL" \
+                --dry-run=client -o yaml > "$OUTPUT_DIR/secret-slack-webhook.yaml"
+            print_success "Generated secret-slack-webhook.yaml"
+        fi
     fi
-
-    kubectl create secret generic slack-bot \
-        --namespace="$LUCAS_NAMESPACE" \
-        $slack_secret_args \
-        --dry-run=client -o yaml | \
-        kubeseal --controller-namespace="$SEALED_SECRETS_NAMESPACE" \
-                 --controller-name="$SEALED_SECRETS_CONTROLLER" \
-                 --format=yaml > "$OUTPUT_DIR/sealed-slack-bot.yaml"
-    print_success "Generated sealed-slack-bot.yaml"
-
-    # Dashboard auth secret
-    kubectl create secret generic dashboard-auth \
-        --namespace="$LUCAS_NAMESPACE" \
-        --from-literal=username="$DASHBOARD_USER" \
-        --from-literal=password="$DASHBOARD_PASS" \
-        --dry-run=client -o yaml | \
-        kubeseal --controller-namespace="$SEALED_SECRETS_NAMESPACE" \
-                 --controller-name="$SEALED_SECRETS_CONTROLLER" \
-                 --format=yaml > "$OUTPUT_DIR/sealed-dashboard-auth.yaml"
-    print_success "Generated sealed-dashboard-auth.yaml"
 
     # agent-deployment.yaml
-    local alert_channel_env=""
-    if [ -n "$SLACK_ALERT_CHANNEL" ]; then
-        alert_channel_env="
-        - name: SRE_ALERT_CHANNEL
-          valueFrom:
-            secretKeyRef:
-              name: slack-bot
-              key: alert-channel"
-    fi
-
     cat > "$OUTPUT_DIR/agent-deployment.yaml" << EOF
 apiVersion: apps/v1
 kind: Deployment
@@ -430,6 +595,7 @@ spec:
         app: a2w-lucas-agent
     spec:
       serviceAccountName: a2w-lucas
+${image_pull_secrets}
       initContainers:
         - name: fix-permissions
           image: busybox:latest
@@ -443,30 +609,52 @@ spec:
               mountPath: /home/claude/.claude
       containers:
         - name: agent
-          image: ghcr.io/a2wio/lucas-agent:latest
+          image: ${IMAGE_REGISTRY}/lucas-agent:latest
           imagePullPolicy: Always
           env:
             - name: TARGET_NAMESPACE
-              value: "${TARGET_NAMESPACE%%,*}"
-            - name: TARGET_NAMESPACES
               value: "${TARGET_NAMESPACE}"
+            - name: TARGET_NAMESPACES
+              value: "${TARGET_NAMESPACES}"
             - name: SRE_MODE
               value: "${LUCAS_MODE}"
+            - name: LLM_BACKEND
+              value: "${LLM_BACKEND}"
+            - name: LLM_PROVIDER
+              value: "${LLM_PROVIDER}"
             - name: CLAUDE_MODEL
               value: "${CLAUDE_MODEL}"
+            - name: LLM_MODEL
+              value: "${LLM_MODEL}"
+            - name: LLM_BASE_URL
+              value: "${LLM_BASE_URL}"
             - name: SQLITE_PATH
               value: "/data/lucas.db"
             - name: HOME
               value: "/home/claude"
             - name: SCAN_INTERVAL_SECONDS
               value: "${SCAN_INTERVAL}"
+            - name: SLACK_EMERGENCY_ACTIONS_ENABLED
+              value: "${SLACK_EMERGENCY_ACTIONS_ENABLED}"
+            - name: SLACK_ACTION_ALLOWED_CHANNELS
+              value: "${SLACK_ACTION_ALLOWED_CHANNELS}"
+            - name: SLACK_ACTION_ALLOWED_USERS
+              value: "${SLACK_ACTION_ALLOWED_USERS}"
+            - name: SLACK_ACTION_ALLOWED_NAMESPACES
+              value: "${SLACK_ACTION_ALLOWED_NAMESPACES}"
             - name: PROMPT_FILE
               value: "/app/master-prompt-interactive.md"
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-auth
+                  key: api-key
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: claude-auth
+                  name: llm-auth
                   key: api-key
+                  optional: true
             - name: SLACK_BOT_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -476,7 +664,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: slack-bot
-                  key: app-token${alert_channel_env}
+                  key: app-token
           volumeMounts:
             - name: data
               mountPath: /data
@@ -520,7 +708,7 @@ spec:
     spec:
       containers:
         - name: dashboard
-          image: ghcr.io/a2wio/lucas-dashboard:latest
+          image: ${IMAGE_REGISTRY}/lucas-dashboard:latest
           imagePullPolicy: Always
           env:
             - name: SQLITE_PATH
@@ -588,6 +776,87 @@ spec:
 EOF
     print_success "Generated dashboard-service.yaml"
 
+    local cron_webhook_env=""
+    if [ -n "$SLACK_WEBHOOK_URL" ]; then
+        cron_webhook_env="
+                - name: SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: slack-webhook
+                      key: webhook-url
+                      optional: true"
+    fi
+
+    cat > "$OUTPUT_DIR/cronjob.yaml" << EOF
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: a2w-lucas
+  namespace: ${LUCAS_NAMESPACE}
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          serviceAccountName: a2w-lucas
+${cron_image_pull_secrets}
+          restartPolicy: Never
+          initContainers:
+            - name: fix-permissions
+              image: busybox:latest
+              command: ["sh", "-c", "chmod -R 777 /data"]
+              securityContext:
+                runAsUser: 0
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+          containers:
+            - name: lucas
+              image: ${IMAGE_REGISTRY}/lucas:latest
+              imagePullPolicy: Always
+              env:
+                - name: TARGET_NAMESPACE
+                  value: "${TARGET_NAMESPACE}"
+                - name: TARGET_NAMESPACES
+                  value: "${TARGET_NAMESPACES}"
+                - name: SRE_MODE
+                  value: "${LUCAS_MODE}"
+                - name: SQLITE_PATH
+                  value: "/data/lucas.db"
+                - name: HOME
+                  value: "/home/claude"
+                - name: LLM_BACKEND
+                  value: "${LLM_BACKEND}"
+                - name: LLM_PROVIDER
+                  value: "${LLM_PROVIDER}"
+                - name: LLM_MODEL
+                  value: "${LLM_MODEL}"
+                - name: LLM_BASE_URL
+                  value: "${LLM_BASE_URL}"
+                - name: AUTH_MODE
+                  value: "api-key"
+                - name: LLM_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-auth
+                      key: api-key
+                      optional: true${cron_webhook_env}
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: lucas-data
+EOF
+    print_success "Generated cronjob.yaml"
+
     print_success "All manifests generated in $OUTPUT_DIR/"
 }
 
@@ -599,17 +868,27 @@ apply_manifests() {
         "namespace.yaml"
         "rbac.yaml"
         "pvc.yaml"
-        "sealed-claude-auth.yaml"
+        "sealed-llm-auth.yaml"
+        "secret-llm-auth.yaml"
         "sealed-slack-bot.yaml"
+        "secret-slack-bot.yaml"
         "sealed-dashboard-auth.yaml"
+        "secret-dashboard-auth.yaml"
+        "sealed-slack-webhook.yaml"
+        "secret-slack-webhook.yaml"
         "agent-deployment.yaml"
+        "cronjob.yaml"
         "dashboard-deployment.yaml"
         "dashboard-service.yaml"
     )
 
     for file in "${files[@]}"; do
         if [ -f "$OUTPUT_DIR/$file" ]; then
-            kubectl apply -f "$OUTPUT_DIR/$file"
+            if [ -n "$KUBECTL_CONTEXT" ]; then
+                kubectl --context "$KUBECTL_CONTEXT" apply -f "$OUTPUT_DIR/$file"
+            else
+                kubectl apply -f "$OUTPUT_DIR/$file"
+            fi
             print_success "Applied $file"
         fi
     done
@@ -651,7 +930,7 @@ generate_templates() {
     mkdir -p "$OUTPUT_DIR"
 
     print_info "Generating manifests with placeholder values..."
-    print_info "You will need to create sealed secrets manually."
+    print_info "You will need to create Kubernetes Secrets or Sealed Secrets manually."
 
     # Set placeholder values
     LUCAS_NAMESPACE="a2w-lucas"
@@ -688,6 +967,9 @@ rules:
     resources: ["pods", "pods/status"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+  - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get", "list"]
   - apiGroups: [""]
@@ -697,8 +979,17 @@ rules:
     resources: ["events"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/status", "deployments/scale", "statefulsets", "statefulsets/status", "statefulsets/scale"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -743,39 +1034,29 @@ spec:
 EOF
     print_success "Generated pvc.yaml"
 
-    # secrets-template.yaml (not sealed, user needs to seal them)
     cat > "$OUTPUT_DIR/secrets-template.yaml" << 'EOF'
-# IMPORTANT: Do not apply this file directly!
-# Use kubeseal to create sealed secrets:
+# IMPORTANT: Do not apply secrets with real values to Git.
+# Create direct Kubernetes Secrets locally, or pipe them through kubeseal if you use Sealed Secrets:
 #
-# kubectl create secret generic claude-auth \
+# kubectl create secret generic llm-auth \
 #     --namespace=a2w-lucas \
-#     --from-literal=api-key="YOUR_ANTHROPIC_API_KEY" \
-#     --dry-run=client -o yaml | \
-#     kubeseal --controller-namespace=sealed-secrets \
-#              --controller-name=sealed-secrets-controller \
-#              --format=yaml > sealed-claude-auth.yaml
+#     --from-literal=api-key="YOUR_LLM_API_KEY" \
+#     --dry-run=client -o yaml > secret-llm-auth.yaml
 #
 # kubectl create secret generic slack-bot \
 #     --namespace=a2w-lucas \
 #     --from-literal=bot-token="xoxb-YOUR-BOT-TOKEN" \
 #     --from-literal=app-token="xapp-YOUR-APP-TOKEN" \
 #     --from-literal=alert-channel="C0123456789" \
-#     --dry-run=client -o yaml | \
-#     kubeseal --controller-namespace=sealed-secrets \
-#              --controller-name=sealed-secrets-controller \
-#              --format=yaml > sealed-slack-bot.yaml
+#     --dry-run=client -o yaml > secret-slack-bot.yaml
 #
 # kubectl create secret generic dashboard-auth \
 #     --namespace=a2w-lucas \
 #     --from-literal=username="admin" \
 #     --from-literal=password="YOUR_PASSWORD" \
-#     --dry-run=client -o yaml | \
-#     kubeseal --controller-namespace=sealed-secrets \
-#              --controller-name=sealed-secrets-controller \
-#              --format=yaml > sealed-dashboard-auth.yaml
+#     --dry-run=client -o yaml > secret-dashboard-auth.yaml
 EOF
-    print_success "Generated secrets-template.yaml (instructions for creating sealed secrets)"
+    print_success "Generated secrets-template.yaml (instructions for creating secret manifests)"
 
     # agent-deployment.yaml with placeholders
     cat > "$OUTPUT_DIR/agent-deployment.yaml" << 'EOF'
@@ -819,8 +1100,16 @@ spec:
               value: "default"  # Comma-separated list
             - name: SRE_MODE
               value: "autonomous"  # or "watcher"
+            - name: LLM_BACKEND
+              value: "claude-code"  # or "openai-compatible"
+            - name: LLM_PROVIDER
+              value: "anthropic"  # or "groq", "kimi"
             - name: CLAUDE_MODEL
-              value: "sonnet"  # or "opus"
+              value: "sonnet"  # Claude only
+            - name: LLM_MODEL
+              value: ""
+            - name: LLM_BASE_URL
+              value: ""
             - name: SQLITE_PATH
               value: "/data/lucas.db"
             - name: HOME
@@ -829,11 +1118,17 @@ spec:
               value: "3600"
             - name: PROMPT_FILE
               value: "/app/master-prompt-interactive.md"
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-auth
+                  key: api-key
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: claude-auth
+                  name: llm-auth
                   key: api-key
+                  optional: true
             - name: SLACK_BOT_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -966,13 +1261,21 @@ EOF
     echo ""
     print_warning "Next steps:"
     echo "  1. Review and edit the manifests as needed"
-    echo "  2. Create sealed secrets using the commands in secrets-template.yaml"
+    echo "  2. Create direct secrets or sealed secrets using the commands in secrets-template.yaml"
     echo "  3. Apply: kubectl apply -f $OUTPUT_DIR/"
     echo ""
 }
 
 main() {
     print_banner
+
+    if [ "$1" = "--env-file" ] && [ -n "$2" ]; then
+        load_env_file "$2"
+        check_prerequisites
+        generate_manifests
+        print_success "Manifests generated from env file in: ${OUTPUT_DIR}"
+        return
+    fi
 
     echo -e "${BOLD}Welcome to the Lucas installer!${NC}"
     echo ""
@@ -1029,4 +1332,3 @@ main() {
 
 # Run main function
 main "$@"
-

@@ -85,8 +85,8 @@ class RunStore:
         pod_count: int = 0,
         error_count: int = 0,
         fix_count: int = 0,
-        report: str = None,
-        log: str = None
+        report: str | None = None,
+        log: str | None = None
     ):
         """Update a run record with results."""
         now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")

@@ -25,9 +25,15 @@ features:
 
 ## Quick Start
 
-1. Create sealed secrets for the Anthropic API key and Slack tokens.
+1. Create Kubernetes Secrets or Sealed Secrets for the LLM API key and Slack tokens.
 2. Deploy with ArgoCD or apply the manifests directly.
 3. Open the dashboard and invite the bot to a Slack channel.
+
+## Specifications
+
+Planning and implementation specs for larger changes live in `docs/specs/`.
+
+- Provider-agnostic backend refactor: see `/specs/index`.
 
 ## Introduction
 
@@ -52,4 +58,4 @@ Pick one of these paths:
 - `src/agent/`: Slack agent, scheduler, and runbooks.
 - `src/dashboard/`: Go dashboard and templates.
 - `k8s/`: Kubernetes manifests for agent, dashboard, and storage.
-- `scripts/`: install script that generates manifests and sealed secrets.
+- `scripts/`: install script that generates manifests and secret manifests.

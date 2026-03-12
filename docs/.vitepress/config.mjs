@@ -14,7 +14,8 @@ export default defineConfig({
     },
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
-      { text: 'Ops', link: '/ops/deployment' }
+      { text: 'Ops', link: '/ops/deployment' },
+      { text: 'Specs', link: '/specs/index' }
     ],
     search: {
       provider: 'local'
@@ -65,6 +66,21 @@ export default defineConfig({
             { text: 'Operations', link: '/ops/operations' },
             { text: 'Runbooks', link: '/ops/runbooks' },
             { text: 'Troubleshooting', link: '/ops/troubleshooting' }
+          ]
+        }
+      ],
+      '/specs/': [
+        {
+          text: 'Provider Refactor',
+          collapsed: false,
+          items: [
+            { text: 'Overview', link: '/specs/index' },
+            { text: 'PRD', link: '/specs/prd-provider-agnostic-backend' },
+            { text: 'TRD', link: '/specs/trd-provider-agnostic-backend' },
+            { text: 'Implementation Plan', link: '/specs/implementation-plan-provider-backends' },
+            { text: 'QA and Rollout', link: '/specs/qa-rollout-provider-backends' },
+            { text: 'Status-First Reporting', link: '/specs/status-first-reporting' },
+            { text: 'Production Transition', link: '/specs/prod-transition' }
           ]
         }
       ]

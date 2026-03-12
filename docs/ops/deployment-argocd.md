@@ -6,12 +6,12 @@ Use ArgoCD to sync the `k8s/` directory from this repo.
 
 1. Create an ArgoCD Application that targets the repo and path `k8s/`.
 2. Set the destination namespace to `a2w-lucas`.
-3. Add secrets for `claude-auth` and `slack-bot`.
+3. Add secrets for `llm-auth` and `slack-bot`.
 4. Sync the application.
 
 ## Notes
 
-- Keep secrets out of Git; use Sealed Secrets or External Secrets.
+- Keep secrets out of Git; use direct Kubernetes Secrets, Sealed Secrets, or External Secrets.
 - Update image tags in `k8s/` when you push new images.
 - If you already manage RBAC or PVCs separately, remove those manifests from the app.
 

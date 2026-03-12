@@ -10,20 +10,29 @@ Use `k8s/cronjob.yaml` and adjust:
 - `image`
 - `TARGET_NAMESPACE`
 - `SRE_MODE` (`autonomous` or `report`)
-- `AUTH_MODE` (`api-key` or `credentials`)
+- `LLM_BACKEND` (`claude-code` or `openai-compatible`)
+- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`)
 - `SLACK_WEBHOOK_URL` (optional)
 
 ## Auth options
 
-API key:
+Claude compatibility:
 
-- Set `AUTH_MODE=api-key`.
-- Provide `ANTHROPIC_API_KEY` in a secret.
+- Set `LLM_BACKEND=claude-code`.
+- Set `AUTH_MODE=api-key` or `credentials`.
+- Provide `ANTHROPIC_API_KEY` or `LLM_API_KEY` in a secret.
 
 Credentials file:
 
 - Set `AUTH_MODE=credentials`.
 - Mount `credentials.json` at `/secrets/credentials.json`.
+
+OpenAI-compatible providers:
+
+- Set `LLM_BACKEND=openai-compatible`.
+- Set `LLM_PROVIDER=groq` or `LLM_PROVIDER=kimi`.
+- Provide `LLM_API_KEY` and `LLM_MODEL`.
+- Set `LLM_BASE_URL` when the provider requires an explicit endpoint.
 
 ## Storage
 

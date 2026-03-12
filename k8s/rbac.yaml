@@ -13,6 +13,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods", "pods/status"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
   # Read pod logs
   - apiGroups: [""]
     resources: ["pods/log"]
@@ -25,10 +28,19 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
   # Optional: read configmaps/secrets for debugging
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/status", "deployments/scale", "statefulsets", "statefulsets/status", "statefulsets/scale"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

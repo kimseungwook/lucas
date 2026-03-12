@@ -14,7 +14,7 @@ A2W: Lucas is a new Kubernetes operations and reliability agent. It runs inside 
 - Interactive agent runs continuously and responds to Slack mentions.
 - CronJob mode runs on a schedule and writes results to SQLite.
 - SQLite is the shared data store for runs, fixes, sessions, and token usage.
-- PVCs persist the database, logs, and Claude session data.
+- PVCs persist the database, logs, and Claude session data when Claude resume support is enabled.
 
 ## Modes
 Interactive agent (`SRE_MODE`):
@@ -27,12 +27,12 @@ CronJob (`SRE_MODE`):
 
 ## Configuration highlights
 Interactive agent:
-- Required: `ANTHROPIC_API_KEY`, `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`.
-- Common: `SRE_MODE`, `CLAUDE_MODEL`, `TARGET_NAMESPACE`, `TARGET_NAMESPACES`, `SRE_ALERT_CHANNEL`, `SCAN_INTERVAL_SECONDS`, `SQLITE_PATH`.
+- Required: `LLM_BACKEND`, `LLM_PROVIDER`, LLM credentials, `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`.
+- Common: `SRE_MODE`, `CLAUDE_MODEL` for Claude, `LLM_MODEL`, `LLM_BASE_URL`, `TARGET_NAMESPACE`, `TARGET_NAMESPACES`, `SRE_ALERT_CHANNEL`, `SCAN_INTERVAL_SECONDS`, `SQLITE_PATH`.
 
 CronJob:
-- Required: `TARGET_NAMESPACE`, `SRE_MODE`, `AUTH_MODE`.
-- Auth: `ANTHROPIC_API_KEY` (api-key) or `credentials.json` (credentials).
+- Required: `TARGET_NAMESPACE`, `SRE_MODE`, `LLM_BACKEND`, `LLM_PROVIDER`.
+- Auth: `LLM_API_KEY` for provider-neutral auth or `ANTHROPIC_API_KEY` / `credentials.json` for Claude compatibility.
 - Optional: `SLACK_WEBHOOK_URL`, `SQLITE_PATH`.
 
 Dashboard:
