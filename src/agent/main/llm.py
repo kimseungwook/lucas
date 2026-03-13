@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 
 load_dotenv(".env.providers.local", override=False)
+load_dotenv("k8s/dev.env.local", override=False)
 load_dotenv(override=False)
 
 LEGACY_MODEL_MAP = {
@@ -29,6 +30,8 @@ DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_KIMI_MODEL = "kimi-k2.5"
 DEFAULT_KIMI_BASE_URL = "https://api.moonshot.ai/v1"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
 
 @dataclass(frozen=True)
@@ -88,13 +91,17 @@ def resolve_llm_config() -> LLMConfig:
     provider_base_url = base_url
 
     if provider == "groq":
-        provider_api_key = os.environ.get("LLM_API_KEY") or os.environ.get("GROQ_API_KEY")
-        provider_model = provider_model or os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL)
-        provider_base_url = provider_base_url or os.environ.get("GROQ_BASE_URL", DEFAULT_GROQ_BASE_URL)
+        provider_api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("LLM_API_KEY")
+        provider_model = os.environ.get("GROQ_MODEL") or provider_model or DEFAULT_GROQ_MODEL
+        provider_base_url = os.environ.get("GROQ_BASE_URL") or provider_base_url or DEFAULT_GROQ_BASE_URL
     elif provider == "kimi":
-        provider_api_key = os.environ.get("LLM_API_KEY") or os.environ.get("KIMI_API_KEY")
-        provider_model = provider_model or os.environ.get("KIMI_MODEL", DEFAULT_KIMI_MODEL)
-        provider_base_url = provider_base_url or os.environ.get("KIMI_BASE_URL", DEFAULT_KIMI_BASE_URL)
+        provider_api_key = os.environ.get("KIMI_API_KEY") or os.environ.get("LLM_API_KEY")
+        provider_model = os.environ.get("KIMI_MODEL") or provider_model or DEFAULT_KIMI_MODEL
+        provider_base_url = os.environ.get("KIMI_BASE_URL") or provider_base_url or DEFAULT_KIMI_BASE_URL
+    elif provider == "gemini":
+        provider_api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("LLM_API_KEY")
+        provider_model = os.environ.get("GEMINI_MODEL") or provider_model or DEFAULT_GEMINI_MODEL
+        provider_base_url = os.environ.get("GEMINI_BASE_URL") or provider_base_url or DEFAULT_GEMINI_BASE_URL
     else:
         provider_api_key = os.environ.get("LLM_API_KEY")
 

@@ -98,9 +98,11 @@ class SlackActionsTests(unittest.TestCase):
             os.environ,
             {
                 "SLACK_EMERGENCY_ACTIONS_ENABLED": "true",
+                "SLACK_ACTION_ALLOWED_CHANNELS": "",
+                "SLACK_ACTION_ALLOWED_USERS": "",
                 "SLACK_ACTION_ALLOWED_NAMESPACES": "argocd,authentik",
             },
-            clear=False,
+            clear=True,
         ):
             allowed, reason = slack_action_allowed("C123", "U123", "argocd")
             self.assertTrue(allowed)

@@ -33,8 +33,8 @@ Required:
 LLM:
 
 - `LLM_BACKEND` (`claude-code` or `openai-compatible`)
-- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`)
-- `LLM_API_KEY` or provider-specific env such as `GROQ_API_KEY` / `KIMI_API_KEY`
+- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`, `gemini`)
+- `LLM_API_KEY` or provider-specific env such as `GROQ_API_KEY` / `KIMI_API_KEY` / `GEMINI_API_KEY`
 - `LLM_MODEL` for openai-compatible providers
 
 Legacy Claude compatibility:
@@ -61,7 +61,7 @@ Required:
 - `TARGET_NAMESPACE`
 - `SRE_MODE` (`autonomous` or `report`)
 - `LLM_BACKEND` (`claude-code` or `openai-compatible`)
-- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`)
+- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`, `gemini`)
 
 If `LLM_BACKEND=claude-code`:
 
@@ -78,6 +78,7 @@ If `LLM_BACKEND=openai-compatible`:
 - Set `LLM_API_KEY` or provider-specific env
 - Set `LLM_BASE_URL` when the provider requires it
 - Expect report-oriented behavior rather than full Claude-style tool parity
+- Gemini Flash is supported as a development backend candidate via the official OpenAI-compatible endpoint.
 
 Optional:
 

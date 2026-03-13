@@ -35,6 +35,8 @@ CronJob:
 - Auth: `LLM_API_KEY` for provider-neutral auth or `ANTHROPIC_API_KEY` / `credentials.json` for Claude compatibility.
 - Optional: `SLACK_WEBHOOK_URL`, `SQLITE_PATH`.
 
+Development backend candidates include `groq`, `kimi`, and `gemini` on the `openai-compatible` path.
+
 Dashboard:
 - `SQLITE_PATH`, `PORT`, `LOG_PATH`, `AUTH_USER`, `AUTH_PASS`.
 

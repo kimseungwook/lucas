@@ -2,11 +2,11 @@
 
 ## Status
 
-Draft proposal. Not implemented yet.
+Implemented in configuration and code. A direct live Gemini backend call and one scheduled dev validation have both completed successfully. A Slack thread validation in `goyo-dev` is still optional follow-up QA rather than a blocker.
 
 ## Summary
 
-Gemini Flash is being evaluated as a low-cost, development-only backend option for Lucas. The intended goal is to make Gemini Flash selectable in development without changing the Slack command surface, the scheduled monitoring flow, or the production backend policy.
+Gemini Flash is available as a low-cost, development-only backend option for Lucas. The intended goal is to make Gemini Flash selectable in development without changing the Slack command surface, the scheduled monitoring flow, or the production backend policy.
 
 ## Why Gemini Flash
 
@@ -107,6 +107,16 @@ If these assumptions fail, Gemini must not be forced into the current `openai-co
 - one scheduled dev run succeeds
 - no change is required to the Slack emergency-action command surface
 - docs and tests pass
+
+## Current implementation state
+
+- `LLM_PROVIDER=gemini` is supported on the existing `openai-compatible` backend path.
+- Default model: `gemini-2.5-flash`
+- Default base URL: `https://generativelanguage.googleapis.com/v1beta/openai`
+- Provider-specific auth fallback: `GEMINI_API_KEY`
+- Direct live backend validation succeeded with a real Gemini response.
+- One scheduled dev validation succeeded and wrote a normal run record to SQLite.
+- The Slack emergency-action surface and non-Claude orchestration path were unchanged.
 
 ## Risks
 

@@ -301,7 +301,7 @@ configure_installation() {
 
     echo ""
     prompt_value "LLM backend (claude-code/openai-compatible)" "$LLM_BACKEND" LLM_BACKEND
-    prompt_value "LLM provider (anthropic/groq/kimi)" "$LLM_PROVIDER" LLM_PROVIDER
+    prompt_value "LLM provider (anthropic/groq/kimi/gemini)" "$LLM_PROVIDER" LLM_PROVIDER
 
     if [ "$LLM_BACKEND" = "claude-code" ]; then
         echo "Claude models:"
@@ -314,6 +314,9 @@ configure_installation() {
         if [ "$LLM_PROVIDER" = "kimi" ]; then
             default_model="kimi-k2.5"
             default_base_url="https://api.moonshot.ai/v1"
+        elif [ "$LLM_PROVIDER" = "gemini" ]; then
+            default_model="gemini-2.5-flash"
+            default_base_url="https://generativelanguage.googleapis.com/v1beta/openai"
         fi
         prompt_value "LLM model" "$default_model" LLM_MODEL
         prompt_value "LLM base URL" "$default_base_url" LLM_BASE_URL

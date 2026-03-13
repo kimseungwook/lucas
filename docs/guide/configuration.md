@@ -10,7 +10,7 @@ Required:
 LLM:
 
 - `LLM_BACKEND`: `claude-code` or `openai-compatible`.
-- `LLM_PROVIDER`: `anthropic`, `groq`, `kimi`.
+- `LLM_PROVIDER`: `anthropic`, `groq`, `kimi`, `gemini`.
 - `LLM_API_KEY`: provider API key.
 - `LLM_MODEL`: required for openai-compatible providers.
 - `LLM_BASE_URL`: optional for Groq, required when the provider does not have a built-in default.
@@ -35,6 +35,7 @@ Notes:
 - If `SRE_ALERT_CHANNEL` is empty, scheduled scans are disabled.
 - `SRE_MODE=watcher` uses the report-only prompt.
 - `LLM_BACKEND=openai-compatible` in interactive mode is reduced-capability today; it does not have Claude-style tool and resume parity.
+- Gemini Flash is available as a development backend candidate through the OpenAI-compatible endpoint.
 
 ## Agent (CronJob mode)
 
@@ -43,7 +44,7 @@ Required:
 - `TARGET_NAMESPACE`
 - `SRE_MODE`: `autonomous` or `report`.
 - `LLM_BACKEND`: `claude-code` or `openai-compatible`.
-- `LLM_PROVIDER`: `anthropic`, `groq`, `kimi`.
+- `LLM_PROVIDER`: `anthropic`, `groq`, `kimi`, `gemini`.
 
 If `LLM_BACKEND=claude-code`:
 
