@@ -20,6 +20,7 @@ This section defines the work required to evolve Lucas from a Claude-specific ru
 - `qa-rollout-provider-backends.md`: verification matrix, migration checklist, rollout plan, and fallback plan.
 - `status-first-reporting.md`: reporting contract for pod-state-first scheduled summaries and compatibility rules.
 - `prod-transition.md`: production-transition policy, env-file workflow, and dev/prod rollout boundaries.
+- `gemini-flash-dev-backend.md`: draft proposal for adding Gemini Flash as a development-only backend candidate.
 
 ## Intended use
 

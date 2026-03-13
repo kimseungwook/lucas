@@ -80,7 +80,8 @@ export default defineConfig({
             { text: 'Implementation Plan', link: '/specs/implementation-plan-provider-backends' },
             { text: 'QA and Rollout', link: '/specs/qa-rollout-provider-backends' },
             { text: 'Status-First Reporting', link: '/specs/status-first-reporting' },
-            { text: 'Production Transition', link: '/specs/prod-transition' }
+            { text: 'Production Transition', link: '/specs/prod-transition' },
+            { text: 'Gemini Flash Draft', link: '/specs/gemini-flash-dev-backend' }
           ]
         }
       ]
