@@ -45,6 +45,8 @@ Lucas currently supports:
 - `claude-code`
 - `openai-compatible`
 
+The `openai-compatible` path can include providers such as Groq, Kimi, Gemini, and OpenRouter.
+
 Gemini Flash should be added in the least invasive way possible.
 
 Preferred path:
@@ -114,6 +116,7 @@ If these assumptions fail, Gemini must not be forced into the current `openai-co
 - Default model: `gemini-2.5-flash`
 - Default base URL: `https://generativelanguage.googleapis.com/v1beta/openai`
 - Provider-specific auth fallback: `GEMINI_API_KEY`
+- Note: OpenRouter is a separate optional provider on the same OpenAI-compatible transport and does not imply OpenViking runtime capability. Default OpenRouter model is `stepfun/step-3.5-flash:free`.
 - Direct live backend validation succeeded with a real Gemini response.
 - One scheduled dev validation succeeded and wrote a normal run record to SQLite.
 - The Slack emergency-action surface and non-Claude orchestration path were unchanged.

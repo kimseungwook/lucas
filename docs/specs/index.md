@@ -1,11 +1,12 @@
 # Specifications
 
-This section defines the work required to evolve Lucas from a Claude-specific runtime into a provider-agnostic agent backend with support for non-Claude providers such as Groq and Kimi.
+This section defines the work required to evolve Lucas from a Claude-specific runtime into a provider-agnostic agent backend with support for non-Claude providers such as Groq, Kimi, Gemini, and OpenRouter.
 
 ## Current status
 
 - The provider-agnostic refactor has been implemented in the local codebase.
 - Groq and Kimi have both been validated through the OpenAI-compatible backend path.
+- OpenRouter is available as an optional OpenAI-compatible provider. Default model is `stepfun/step-3.5-flash:free`.
 - The development cluster `goyo-dev` currently runs a live Groq-backed scheduled monitoring path, a live interactive Slack agent, and the dashboard in namespace `a2w-lucas`.
 - The current non-Claude path is snapshot-driven and reduced-capability compared with Claude Code tool execution.
 - Slack emergency actions are implemented in development for the approved allowlist.
@@ -21,6 +22,7 @@ This section defines the work required to evolve Lucas from a Claude-specific ru
 - `status-first-reporting.md`: reporting contract for pod-state-first scheduled summaries and compatibility rules.
 - `prod-transition.md`: production-transition policy, env-file workflow, and dev/prod rollout boundaries.
 - `gemini-flash-dev-backend.md`: draft proposal for adding Gemini Flash as a development-only backend candidate.
+- OpenRouter provider support is documented in the provider-agnostic backend docs.
 
 ## Intended use
 
