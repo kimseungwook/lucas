@@ -23,3 +23,9 @@ If `SRE_ALERT_CHANNEL` is empty, scheduled scans are disabled.
 - CronJob runs write to `/data/lucas.log`.
 - The dashboard reads from `LOG_PATH`.
 - The agent logs are available via `kubectl logs`.
+
+## Drift auditor
+
+- The first drift-auditor release is read-only.
+- It reports evidence, likely cause, and remediation steps.
+- The first release targets storage/node-placement drift, runtime surface drift, and deployment-vs-cron runtime configuration drift.
