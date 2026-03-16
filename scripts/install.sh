@@ -31,6 +31,8 @@ LLM_PROVIDER="anthropic"
 LLM_MODEL=""
 LLM_BASE_URL=""
 CLAUDE_MODEL="sonnet"
+OPENROUTER_DEFAULT_MODEL="stepfun/step-3.5-flash:free"
+OPENROUTER_DEFAULT_BASE_URL="https://openrouter.ai/api/v1"
 SCAN_INTERVAL="3600"
 SEALED_SECRETS_NAMESPACE="sealed-secrets"
 SEALED_SECRETS_CONTROLLER="sealed-secrets-controller"
@@ -97,6 +99,18 @@ normalize_config() {
     fi
     if [ -z "$TARGET_NAMESPACES" ]; then
         TARGET_NAMESPACES="$TARGET_NAMESPACE"
+    fi
+    if [ "$LLM_PROVIDER" = "openrouter" ] && [ "$LLM_BACKEND" = "claude-code" ]; then
+        print_warning "openrouter requires openai-compatible backend; switching LLM_BACKEND to openai-compatible"
+        LLM_BACKEND="openai-compatible"
+    fi
+    if [ "$LLM_PROVIDER" = "openrouter" ]; then
+        if [ -z "$LLM_MODEL" ]; then
+            LLM_MODEL="$OPENROUTER_DEFAULT_MODEL"
+        fi
+        if [ -z "$LLM_BASE_URL" ]; then
+            LLM_BASE_URL="$OPENROUTER_DEFAULT_BASE_URL"
+        fi
     fi
     TARGET_NAMESPACE="${TARGET_NAMESPACES%%,*}"
 }
@@ -301,7 +315,12 @@ configure_installation() {
 
     echo ""
     prompt_value "LLM backend (claude-code/openai-compatible)" "$LLM_BACKEND" LLM_BACKEND
-    prompt_value "LLM provider (anthropic/groq/kimi/gemini)" "$LLM_PROVIDER" LLM_PROVIDER
+    prompt_value "LLM provider (anthropic/groq/kimi/gemini/openrouter)" "$LLM_PROVIDER" LLM_PROVIDER
+
+    if [ "$LLM_PROVIDER" = "openrouter" ] && [ "$LLM_BACKEND" = "claude-code" ]; then
+        print_warning "openrouter requires openai-compatible backend; switching LLM_BACKEND to openai-compatible"
+        LLM_BACKEND="openai-compatible"
+    fi
 
     if [ "$LLM_BACKEND" = "claude-code" ]; then
         echo "Claude models:"
@@ -317,6 +336,9 @@ configure_installation() {
         elif [ "$LLM_PROVIDER" = "gemini" ]; then
             default_model="gemini-2.5-flash"
             default_base_url="https://generativelanguage.googleapis.com/v1beta/openai"
+        elif [ "$LLM_PROVIDER" = "openrouter" ]; then
+            default_model="$OPENROUTER_DEFAULT_MODEL"
+            default_base_url="$OPENROUTER_DEFAULT_BASE_URL"
         fi
         prompt_value "LLM model" "$default_model" LLM_MODEL
         prompt_value "LLM base URL" "$default_base_url" LLM_BASE_URL
