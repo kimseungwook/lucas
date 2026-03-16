@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
+import importlib.util
 import json
 import logging
 import os
 from dataclasses import dataclass
 from typing import Any
 
-import aiohttp
 from dotenv import load_dotenv
+
+if importlib.util.find_spec("aiohttp") is not None:
+    aiohttp = importlib.import_module("aiohttp")
+else:
+    aiohttp = None
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +38,8 @@ DEFAULT_KIMI_MODEL = "kimi-k2.5"
 DEFAULT_KIMI_BASE_URL = "https://api.moonshot.ai/v1"
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+DEFAULT_OPENROUTER_MODEL = "stepfun/step-3.5-flash:free"
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 @dataclass(frozen=True)
@@ -102,6 +110,14 @@ def resolve_llm_config() -> LLMConfig:
         provider_api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("LLM_API_KEY")
         provider_model = os.environ.get("GEMINI_MODEL") or provider_model or DEFAULT_GEMINI_MODEL
         provider_base_url = os.environ.get("GEMINI_BASE_URL") or provider_base_url or DEFAULT_GEMINI_BASE_URL
+    elif provider == "openrouter":
+        provider_api_key = (
+            os.environ.get("OPENROUTER_API_KEY")
+            or os.environ.get("OPENROUTE_API_KEY")
+            or os.environ.get("LLM_API_KEY")
+        )
+        provider_model = os.environ.get("OPENROUTER_MODEL") or provider_model or DEFAULT_OPENROUTER_MODEL
+        provider_base_url = os.environ.get("OPENROUTER_BASE_URL") or provider_base_url or DEFAULT_OPENROUTER_BASE_URL
     else:
         provider_api_key = os.environ.get("LLM_API_KEY")
 
@@ -274,6 +290,8 @@ class OpenAICompatibleBackend(AgentBackend):
         context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         del session_id
+        if aiohttp is None:
+            raise RuntimeError("aiohttp is required for openai-compatible backends")
         context = context or {}
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
         messages.extend(context.get("history") or [])
