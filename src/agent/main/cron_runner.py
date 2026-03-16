@@ -1,22 +1,44 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import os
+import json
 from pathlib import Path
-
-import aiohttp
+from typing import Any, cast
 
 try:
     from .cluster_snapshot import build_multi_namespace_snapshot, build_namespace_snapshot, resolve_target_namespaces, summarize_cluster_overview
+    from .drift_auditor import build_drift_audit_result, collect_runtime_drift_inputs
     from .llm import calculate_cost, create_backend, resolve_llm_config, validate_llm_config
     from .report_utils import extract_report_payload, format_slack_scan_message, parse_run_report
     from .sessions import RunStore
 except ImportError:
-    from cluster_snapshot import build_multi_namespace_snapshot, build_namespace_snapshot, resolve_target_namespaces, summarize_cluster_overview
-    from llm import calculate_cost, create_backend, resolve_llm_config, validate_llm_config
-    from report_utils import extract_report_payload, format_slack_scan_message, parse_run_report
-    from sessions import RunStore
+    cluster_snapshot = importlib.import_module("cluster_snapshot")
+    drift_auditor = importlib.import_module("drift_auditor")
+    llm = importlib.import_module("llm")
+    report_utils = importlib.import_module("report_utils")
+    sessions = importlib.import_module("sessions")
+
+    build_multi_namespace_snapshot = cluster_snapshot.build_multi_namespace_snapshot
+    build_namespace_snapshot = cluster_snapshot.build_namespace_snapshot
+    resolve_target_namespaces = cluster_snapshot.resolve_target_namespaces
+    summarize_cluster_overview = cluster_snapshot.summarize_cluster_overview
+
+    build_drift_audit_result = drift_auditor.build_drift_audit_result
+    collect_runtime_drift_inputs = drift_auditor.collect_runtime_drift_inputs
+
+    calculate_cost = llm.calculate_cost
+    create_backend = llm.create_backend
+    resolve_llm_config = llm.resolve_llm_config
+    validate_llm_config = llm.validate_llm_config
+
+    extract_report_payload = report_utils.extract_report_payload
+    format_slack_scan_message = report_utils.format_slack_scan_message
+    parse_run_report = report_utils.parse_run_report
+
+    RunStore = sessions.RunStore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +59,7 @@ async def send_slack_webhook(message: str) -> None:
     if not webhook:
         logger.info("Slack notifications disabled (SLACK_WEBHOOK_URL not set)")
         return
+    aiohttp = importlib.import_module("aiohttp")
 
     payload = {"text": message[:1500]}
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
@@ -44,6 +67,46 @@ async def send_slack_webhook(message: str) -> None:
             if response.status >= 400:
                 body = await response.text()
                 raise RuntimeError(f"Slack webhook failed: {response.status} {body[:500]}")
+
+
+def build_stored_report_payload(
+    *,
+    run_scope: str,
+    run_id: int,
+    status: str,
+    pod_count: int,
+    error_count: int,
+    fix_count: int,
+    summary: str,
+    details: list[dict[str, Any]],
+    pods_with_restarts: int,
+    status_breakdown: dict[str, Any],
+    reason_breakdown: dict[str, Any],
+    top_problematic_pods: list[dict[str, Any]],
+    drift_audit: dict[str, Any] | None = None,
+) -> str:
+    drift_audit = drift_audit or {"drift_summary": {}, "drifts": []}
+    return json.dumps(
+        {
+            "scope": run_scope,
+            "run_id": run_id,
+            "status": status,
+            "total_pods": pod_count,
+            "pod_count": pod_count,
+            "issues": error_count,
+            "error_count": error_count,
+            "fix_count": fix_count,
+            "pods_with_restarts": pods_with_restarts,
+            "status_breakdown": status_breakdown,
+            "reason_breakdown": reason_breakdown,
+            "top_problematic_pods": top_problematic_pods,
+            "summary": summary,
+            "details": details,
+            "drift_summary": drift_audit.get("drift_summary", {}),
+            "drifts": drift_audit.get("drifts", []),
+        },
+        ensure_ascii=False,
+    )
 
 
 async def main() -> None:
@@ -92,6 +155,18 @@ async def main() -> None:
             },
         )
 
+        try:
+            drift_inputs = collect_runtime_drift_inputs()
+            drift_audit = build_drift_audit_result(**drift_inputs)
+        except Exception as drift_exc:
+            logger.warning("Drift audit skipped: %s", drift_exc)
+            drift_audit = {"status": "ok", "drift_summary": {}, "drifts": []}
+
+        raw_drift_summary = drift_audit.get("drift_summary", {}) if isinstance(drift_audit, dict) else {}
+        raw_drifts = drift_audit.get("drifts", []) if isinstance(drift_audit, dict) else []
+        drift_summary: dict[str, Any] = raw_drift_summary if isinstance(raw_drift_summary, dict) else {}
+        drifts: list[Any] = list(raw_drifts) if isinstance(raw_drifts, list) else []
+
         if config.backend == "openai-compatible":
             snapshot = build_multi_namespace_snapshot(target_namespaces) if len(target_namespaces) > 1 else build_namespace_snapshot(target_namespace)
             prompt = (
@@ -125,26 +200,20 @@ async def main() -> None:
                         "issue": f"phase={item.get('phase', '')}, reason={item.get('reason', '')}, restarts={item.get('restarts', 0)}",
                     }
                 )
-            import json
-
-            report = json.dumps(
-                {
-                    "scope": run_scope,
-                    "run_id": run_id,
-                    "status": status,
-                    "total_pods": pod_count,
-                    "pod_count": pod_count,
-                    "issues": error_count,
-                    "error_count": error_count,
-                    "fix_count": 0,
-                    "pods_with_restarts": pods_with_restarts,
-                    "status_breakdown": status_breakdown,
-                    "reason_breakdown": reason_breakdown,
-                    "top_problematic_pods": top_problematic_pods,
-                    "summary": summary,
-                    "details": details,
-                },
-                ensure_ascii=False,
+            report = build_stored_report_payload(
+                run_scope=run_scope,
+                run_id=run_id,
+                status=status,
+                pod_count=pod_count,
+                error_count=error_count,
+                fix_count=0,
+                summary=summary,
+                details=details,
+                pods_with_restarts=pods_with_restarts,
+                status_breakdown=status_breakdown,
+                reason_breakdown=reason_breakdown,
+                top_problematic_pods=top_problematic_pods,
+                drift_audit=cast(dict[str, Any], drift_audit),
             )
             full_log = report
             result = {"input_tokens": 0, "output_tokens": 0, "model": config.model, "cost": 0.0}
@@ -168,6 +237,10 @@ async def main() -> None:
             status_breakdown = parsed_report.get("status_breakdown") if isinstance(parsed_report.get("status_breakdown"), dict) else {}
             reason_breakdown = parsed_report.get("reason_breakdown") if isinstance(parsed_report.get("reason_breakdown"), dict) else {}
             top_problematic_pods = parsed_report.get("top_problematic_pods") if isinstance(parsed_report.get("top_problematic_pods"), list) else []
+            parsed_drift_summary = parsed_report.get("drift_summary")
+            parsed_drifts = parsed_report.get("drifts")
+            drift_summary = parsed_drift_summary if isinstance(parsed_drift_summary, dict) else drift_summary
+            drifts = list(parsed_drifts) if isinstance(parsed_drifts, list) else drifts
 
         if cluster_overview is not None and config.backend != "openai-compatible":
             pod_count = cluster_overview["pod_count"]
@@ -197,22 +270,55 @@ async def main() -> None:
             reason_breakdown = locals().get("reason_breakdown", {}) if isinstance(locals().get("reason_breakdown", {}), dict) else {}
             top_problematic_pods = locals().get("top_problematic_pods", []) if isinstance(locals().get("top_problematic_pods", []), list) else []
 
+        if config.backend == "openai-compatible":
+            raw_drift_summary = drift_audit.get("drift_summary", {}) if isinstance(drift_audit, dict) else {}
+            raw_drifts = drift_audit.get("drifts", []) if isinstance(drift_audit, dict) else []
+            drift_summary = raw_drift_summary if isinstance(raw_drift_summary, dict) else {}
+            drifts = list(raw_drifts) if isinstance(raw_drifts, list) else []
+
+        status_breakdown = status_breakdown if isinstance(status_breakdown, dict) else {}
+        reason_breakdown = reason_breakdown if isinstance(reason_breakdown, dict) else {}
+        top_problematic_pods = top_problematic_pods if isinstance(top_problematic_pods, list) else []
+        drift_summary = drift_summary if isinstance(drift_summary, dict) else {}
+        drifts = drifts if isinstance(drifts, list) else []
+
+        report = build_stored_report_payload(
+            run_scope=run_scope,
+            run_id=run_id,
+            status=status,
+            pod_count=pod_count,
+            error_count=error_count,
+            fix_count=fix_count,
+            summary=summary,
+            details=details,
+            pods_with_restarts=pods_with_restarts,
+            status_breakdown=status_breakdown,
+            reason_breakdown=reason_breakdown,
+            top_problematic_pods=top_problematic_pods,
+            drift_audit={"drift_summary": drift_summary, "drifts": drifts},
+        )
+
         cost = result.get("cost", 0.0)
         if not cost and config.backend == "claude-code":
             cost = calculate_cost(
-                result.get("model", config.model),
-                result.get("input_tokens", 0),
-                result.get("output_tokens", 0),
+                str(result.get("model", config.model)),
+                int(result.get("input_tokens", 0) or 0),
+                int(result.get("output_tokens", 0) or 0),
             )
 
-        if result.get("input_tokens") or result.get("output_tokens"):
+        model_name = str(result.get("model", config.model))
+        input_tokens = int(result.get("input_tokens", 0) or 0)
+        output_tokens = int(result.get("output_tokens", 0) or 0)
+        numeric_cost = float(cost or 0.0)
+
+        if input_tokens or output_tokens:
             await run_store.record_token_usage(
                 run_id=run_id,
                 namespace=run_scope,
-                model=result.get("model", config.model),
-                input_tokens=result.get("input_tokens", 0),
-                output_tokens=result.get("output_tokens", 0),
-                cost=cost,
+                model=model_name,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost=numeric_cost,
             )
 
         await run_store.update_run(
@@ -238,6 +344,8 @@ async def main() -> None:
                 status_breakdown=status_breakdown,
                 reason_breakdown=reason_breakdown,
                 top_problematic_pods=top_problematic_pods,
+                drift_summary=drift_summary,
+                drifts=cast(list[dict[str, Any]], drifts),
             )
         )
         logger.info("Run #%s completed with status=%s", run_id, status)

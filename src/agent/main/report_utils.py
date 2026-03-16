@@ -40,6 +40,8 @@ def parse_run_report(report: str) -> dict[str, Any]:
         "status_breakdown": {},
         "reason_breakdown": {},
         "top_problematic_pods": [],
+        "drift_summary": {},
+        "drifts": [],
     }
 
     try:
@@ -59,6 +61,10 @@ def parse_run_report(report: str) -> dict[str, Any]:
         parsed["reason_breakdown"] = reason_breakdown if isinstance(reason_breakdown, dict) else {}
         top_problematic = payload.get("top_problematic_pods") or []
         parsed["top_problematic_pods"] = top_problematic if isinstance(top_problematic, list) else []
+        drift_summary = payload.get("drift_summary") or {}
+        parsed["drift_summary"] = drift_summary if isinstance(drift_summary, dict) else {}
+        drifts = payload.get("drifts") or []
+        parsed["drifts"] = drifts if isinstance(drifts, list) else []
         if not parsed["details"] and parsed["top_problematic_pods"]:
             parsed["details"] = [
                 {
@@ -97,6 +103,8 @@ def format_slack_scan_message(
     status_breakdown: dict[str, int] | None = None,
     reason_breakdown: dict[str, int] | None = None,
     top_problematic_pods: list[dict[str, Any]] | None = None,
+    drift_summary: dict[str, int] | None = None,
+    drifts: list[dict[str, Any]] | None = None,
 ) -> str:
     lines = [
         "*Lucas 정기 점검*",
@@ -121,6 +129,28 @@ def format_slack_scan_message(
         lines.append("reason_breakdown")
         for key in sorted(reason_breakdown):
             lines.append(f"- {key}: {reason_breakdown[key]}")
+
+    if drift_summary:
+        lines.append("drift_summary")
+        for key in sorted(drift_summary):
+            lines.append(f"- {key}: {drift_summary[key]}")
+
+    drift_items = drifts or []
+    if drift_items:
+        lines.append("top_drifts")
+        for item in drift_items[:3]:
+            if not isinstance(item, dict):
+                continue
+            drift_type = str(item.get("type") or "unknown-drift")
+            severity = str(item.get("severity") or "")
+            resource = str(item.get("resource") or "")
+            likely_cause = str(item.get("likely_cause") or "")
+            prefix = f"- [{severity}] {drift_type}" if severity else f"- {drift_type}"
+            if resource:
+                prefix += f" @ {resource}"
+            if likely_cause:
+                prefix += f": {likely_cause}"
+            lines.append(prefix[:300])
 
     clean_summary = _sanitize_summary(summary)
     problematic = top_problematic_pods or []
