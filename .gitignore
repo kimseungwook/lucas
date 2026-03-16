@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 k8s/*.env.local
 lucas-k8s/
+.worktrees/
