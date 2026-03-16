@@ -11,7 +11,7 @@ Use `k8s/cronjob.yaml` and adjust:
 - `TARGET_NAMESPACE`
 - `SRE_MODE` (`autonomous` or `report`)
 - `LLM_BACKEND` (`claude-code` or `openai-compatible`)
-- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`, `gemini`)
+- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`, `gemini`, `openrouter`)
 - `SLACK_WEBHOOK_URL` (optional)
 
 ## Auth options
@@ -30,9 +30,14 @@ Credentials file:
 OpenAI-compatible providers:
 
 - Set `LLM_BACKEND=openai-compatible`.
-- Set `LLM_PROVIDER=groq`, `LLM_PROVIDER=kimi`, or `LLM_PROVIDER=gemini`.
+- Set `LLM_PROVIDER=groq`, `LLM_PROVIDER=kimi`, `LLM_PROVIDER=gemini`, or `LLM_PROVIDER=openrouter`.
 - Provide `LLM_API_KEY` and `LLM_MODEL`.
 - Set `LLM_BASE_URL` when the provider requires an explicit endpoint.
+
+OpenRouter notes:
+
+- Prefer `OPENROUTER_API_KEY` (or `LLM_API_KEY`) for credentials.
+- Default model is `stepfun/step-3.5-flash:free` when `OPENROUTER_MODEL` is not set.
 
 ## Storage
 

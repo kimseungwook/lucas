@@ -33,9 +33,10 @@ Required:
 LLM:
 
 - `LLM_BACKEND` (`claude-code` or `openai-compatible`)
-- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`, `gemini`)
-- `LLM_API_KEY` or provider-specific env such as `GROQ_API_KEY` / `KIMI_API_KEY` / `GEMINI_API_KEY`
+- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`, `gemini`, `openrouter`)
+- `LLM_API_KEY` or provider-specific env such as `GROQ_API_KEY` / `KIMI_API_KEY` / `GEMINI_API_KEY` / `OPENROUTER_API_KEY`
 - `LLM_MODEL` for openai-compatible providers
+- OpenRouter (optional): default model is `stepfun/step-3.5-flash:free` when `LLM_PROVIDER=openrouter`.
 
 Legacy Claude compatibility:
 
@@ -61,7 +62,7 @@ Required:
 - `TARGET_NAMESPACE`
 - `SRE_MODE` (`autonomous` or `report`)
 - `LLM_BACKEND` (`claude-code` or `openai-compatible`)
-- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`, `gemini`)
+- `LLM_PROVIDER` (`anthropic`, `groq`, `kimi`, `gemini`, `openrouter`)
 
 If `LLM_BACKEND=claude-code`:
 
@@ -139,4 +140,5 @@ The dashboard shows recent runs, sessions, costs, and runbooks. Configure login 
 
 - The helper script at `scripts/install.sh` can generate manifests and sealed secrets.
 - `claude-sessions` PVC is only required for Claude resume support.
+- OpenViking can provide memory or context support in supported environments, but Lucas must not assume OpenViking tools, long-term memory, or Claude-style resume are always available. When that support is absent, Lucas should rely only on the current prompt, explicit context, and live Kubernetes data.
 - Docs live in `docs/` (VitePress).

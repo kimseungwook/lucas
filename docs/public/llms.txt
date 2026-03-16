@@ -1,4 +1,4 @@
-# A2W: Lucas — LLM Guide (New Kubernetes agent)
+# A2W: Lucas - LLM Guide (New Kubernetes agent)
 
 ## What this is
 A2W: Lucas is a new Kubernetes operations and reliability agent. It runs inside a cluster, inspects pods and logs, can report or remediate issues based on mode, and exposes a dashboard backed by SQLite.
@@ -15,6 +15,10 @@ A2W: Lucas is a new Kubernetes operations and reliability agent. It runs inside 
 - CronJob mode runs on a schedule and writes results to SQLite.
 - SQLite is the shared data store for runs, fixes, sessions, and token usage.
 - PVCs persist the database, logs, and Claude session data when Claude resume support is enabled.
+
+OpenViking context note:
+
+OpenViking can provide memory or context support in supported environments, but Lucas must not assume OpenViking tools, long-term memory, or Claude-style resume are always available. When that support is absent, Lucas should rely only on the current prompt, explicit context, and live Kubernetes data.
 
 ## Modes
 Interactive agent (`SRE_MODE`):
@@ -35,7 +39,11 @@ CronJob:
 - Auth: `LLM_API_KEY` for provider-neutral auth or `ANTHROPIC_API_KEY` / `credentials.json` for Claude compatibility.
 - Optional: `SLACK_WEBHOOK_URL`, `SQLITE_PATH`.
 
-Development backend candidates include `groq`, `kimi`, and `gemini` on the `openai-compatible` path.
+Development backend candidates include `groq`, `kimi`, `gemini`, and `openrouter` on the `openai-compatible` path.
+
+OpenRouter defaults:
+
+- default model: `stepfun/step-3.5-flash:free`
 
 Dashboard:
 - `SQLITE_PATH`, `PORT`, `LOG_PATH`, `AUTH_USER`, `AUTH_PASS`.

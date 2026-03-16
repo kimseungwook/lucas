@@ -10,10 +10,17 @@ Required:
 LLM:
 
 - `LLM_BACKEND`: `claude-code` or `openai-compatible`.
-- `LLM_PROVIDER`: `anthropic`, `groq`, `kimi`, `gemini`.
+- `LLM_PROVIDER`: `anthropic`, `groq`, `kimi`, `gemini`, `openrouter`.
 - `LLM_API_KEY`: provider API key.
 - `LLM_MODEL`: required for openai-compatible providers.
 - `LLM_BASE_URL`: optional for Groq, required when the provider does not have a built-in default.
+
+OpenRouter (optional, OpenAI-compatible):
+
+- `LLM_PROVIDER=openrouter`
+- `OPENROUTER_API_KEY`: preferred credential env.
+- `OPENROUTER_MODEL`: optional, defaults to `stepfun/step-3.5-flash:free`.
+- `OPENROUTER_BASE_URL`: optional, defaults to `https://openrouter.ai/api/v1`.
 
 Legacy Claude compatibility:
 
@@ -36,6 +43,7 @@ Notes:
 - `SRE_MODE=watcher` uses the report-only prompt.
 - `LLM_BACKEND=openai-compatible` in interactive mode is reduced-capability today; it does not have Claude-style tool and resume parity.
 - Gemini Flash is available as a development backend candidate through the OpenAI-compatible endpoint.
+- OpenViking can provide memory or context support in supported environments, but Lucas must not assume OpenViking tools, long-term memory, or Claude-style resume are always available. When that support is absent, Lucas should rely only on the current prompt, explicit context, and live Kubernetes data.
 
 ## Agent (CronJob mode)
 
@@ -44,7 +52,7 @@ Required:
 - `TARGET_NAMESPACE`
 - `SRE_MODE`: `autonomous` or `report`.
 - `LLM_BACKEND`: `claude-code` or `openai-compatible`.
-- `LLM_PROVIDER`: `anthropic`, `groq`, `kimi`, `gemini`.
+- `LLM_PROVIDER`: `anthropic`, `groq`, `kimi`, `gemini`, `openrouter`.
 
 If `LLM_BACKEND=claude-code`:
 
