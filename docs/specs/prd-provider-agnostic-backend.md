@@ -2,13 +2,14 @@
 
 ## Summary
 
-Lucas is currently coupled to Anthropic's Claude Code CLI for both interactive Slack flows and scheduled CronJob execution. This project will introduce a provider-agnostic backend layer so Lucas can keep its existing operational behavior while supporting multiple model backends, starting with Claude Code and an OpenAI-compatible path suitable for Groq and Kimi.
+Lucas is currently coupled to Anthropic's Claude Code CLI for both interactive Slack flows and scheduled CronJob execution. This project will introduce a provider-agnostic backend layer so Lucas can keep its existing operational behavior while supporting multiple model backends, starting with Claude Code and an OpenAI-compatible path suitable for Groq, Kimi, Gemini, and OpenRouter.
 
 ## Current implementation status
 
 - Shared backend/config abstraction has been implemented.
 - Claude compatibility remains in the codebase.
 - OpenAI-compatible validation has succeeded against both Groq and Kimi.
+- OpenRouter is supported as an optional OpenAI-compatible provider. Default model is `stepfun/step-3.5-flash:free`.
 - `goyo-dev` currently runs the dashboard, a Groq-backed scheduled monitoring CronJob, and a Groq-backed interactive Slack agent in `a2w-lucas`.
 - The current non-Claude runtime is intentionally reduced-capability: it uses Kubernetes snapshots and report formatting instead of full Claude-style tool execution.
 - Slack emergency actions are implemented in development and validated against an allowlisted command set in `goyo-dev`.
@@ -27,6 +28,7 @@ At project start, provider choice was effectively hardcoded into the runtime. Th
 - Preserve existing Lucas behavior for Claude users.
 - Add a provider-neutral configuration model for backend, provider, model, API key, and base URL.
 - Support an OpenAI-compatible backend path that can target Groq or Kimi.
+- Support OpenRouter as an optional OpenAI-compatible provider.
 - Keep Slack workflows, scheduled scans, SQLite persistence, and dashboard visibility intact.
 - Make future provider additions incremental rather than architectural.
 - Add a safe Slack emergency-action surface for a small allowlist of Kubernetes operations.
@@ -97,6 +99,10 @@ Needs the backend integration surface to be explicit, testable, and documented s
 ### FR-1 Configuration
 
 Lucas must support provider-neutral settings for backend type, provider name, model name, API key, and optional base URL.
+
+OpenViking context guardrail:
+
+OpenViking can provide memory or context support in supported environments, but Lucas must not assume OpenViking tools, long-term memory, or Claude-style resume are always available. When that support is absent, Lucas should rely only on the current prompt, explicit context, and live Kubernetes data.
 
 ### FR-2 Backward compatibility
 

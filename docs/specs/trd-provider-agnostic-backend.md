@@ -4,6 +4,10 @@
 
 Replace the current Claude-specific execution path with a backend abstraction that supports both Claude Code and OpenAI-compatible providers without rewriting Lucas operational flows.
 
+OpenViking context guardrail:
+
+OpenViking can provide memory or context support in supported environments, but Lucas must not assume OpenViking tools, long-term memory, or Claude-style resume are always available. When that support is absent, Lucas should rely only on the current prompt, explicit context, and live Kubernetes data.
+
 ## Current state
 
 Lucas currently depends on Claude-specific runtime behavior:
@@ -93,13 +97,14 @@ Validated defaults:
 
 - Groq: `https://api.groq.com/openai/v1`, model `llama-3.3-70b-versatile`
 - Kimi: `https://api.moonshot.ai/v1`, model `kimi-k2.5`
+- OpenRouter: `https://openrouter.ai/api/v1`, model `stepfun/step-3.5-flash:free`
 
 ## Configuration model
 
 ### New variables
 
 - `LLM_BACKEND`: `claude-code` or `openai-compatible`
-- `LLM_PROVIDER`: `anthropic`, `groq`, `kimi`, or future values
+- `LLM_PROVIDER`: `anthropic`, `groq`, `kimi`, `gemini`, `openrouter`, or future values
 - `LLM_MODEL`: concrete model identifier
 - `LLM_API_KEY`: provider API key
 - `LLM_BASE_URL`: optional override for OpenAI-compatible providers
@@ -112,6 +117,7 @@ Example secret handling:
 
 - Use `LLM_API_KEY` as a runtime-injected secret, not a checked-in literal value.
 - Use `LLM_BASE_URL` for provider-specific OpenAI-compatible endpoints, for example Groq at `https://api.groq.com/openai/v1`.
+- OpenRouter canonical envs: `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`.
 - Keep provider examples in docs as placeholders only.
 
 ### Compatibility layer

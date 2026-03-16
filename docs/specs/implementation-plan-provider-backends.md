@@ -11,6 +11,7 @@ This document translates the PRD and TRD into a delivery sequence that can be ex
 - Claude-specific execution was isolated behind a backend abstraction.
 - Provider-neutral config resolution and secret naming were introduced.
 - Groq and Kimi support were implemented and validated.
+- OpenRouter support is available as an optional OpenAI-compatible provider. Default model is `stepfun/step-3.5-flash:free`.
 - `goyo-dev` now runs a live scheduled monitoring path, dashboard, and interactive agent in `a2w-lucas`.
 - Scheduled alert formatting was tightened to prevent raw pseudo-command transcripts from being forwarded.
 - Interactive non-Claude replies were moved toward snapshot-driven results instead of command echoing.
@@ -109,6 +110,7 @@ Exit criteria:
 - Ops updates
 - Migration notes
 - Known limitations
+- OpenRouter and OpenViking context wording alignment
 
 ### Validation
 

@@ -32,6 +32,7 @@
 - Model and usage fields are recorded without breaking dashboard queries.
 - Unsupported session behavior is either handled or clearly logged.
 - Reduced-capability behavior is documented for non-Claude interactive flows.
+- OpenRouter path: `LLM_PROVIDER=openrouter` uses OpenRouter envs and defaults model to `stepfun/step-3.5-flash:free`.
 
 ### Slack emergency actions
 
@@ -66,6 +67,13 @@
 - Inject credentials from the runtime environment or Kubernetes secrets; do not place raw keys in repo files or docs examples.
 - Run one scheduled execution first.
 - If interactive support is in scope, validate one Slack request and one follow-up behavior.
+
+### Scenario 4: OpenRouter through OpenAI-compatible backend
+
+- Confirm the active context is `goyo-dev` before validating the OpenRouter path.
+- Start Lucas with `LLM_BACKEND=openai-compatible` and `LLM_PROVIDER=openrouter`.
+- Prefer `OPENROUTER_API_KEY`. Optionally set `OPENROUTER_MODEL` (default `stepfun/step-3.5-flash:free`).
+- Do not assume OpenViking tools or long-term memory are present unless the environment provides them.
 
 ## Executed verification evidence
 
