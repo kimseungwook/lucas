@@ -50,15 +50,15 @@ spec:
             - name: SRE_MODE
               value: "autonomous"
             - name: LLM_BACKEND
-              value: "claude-code"
+              value: "openai-compatible"
             - name: LLM_PROVIDER
-              value: "anthropic"
+              value: "gemini"
             - name: CLAUDE_MODEL
               value: "sonnet"
             - name: LLM_MODEL
-              value: ""
+              value: "gemini-2.5-flash"
             - name: LLM_BASE_URL
-              value: ""
+              value: "https://generativelanguage.googleapis.com/v1beta/openai"
             # Database path (shared with dashboard)
             - name: SQLITE_PATH
               value: "/data/lucas.db"

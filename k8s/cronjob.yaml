@@ -42,13 +42,13 @@ spec:
                 - name: HOME
                   value: "/home/claude"
                 - name: LLM_BACKEND
-                  value: "claude-code"
+                  value: "openai-compatible"
                 - name: LLM_PROVIDER
-                  value: "anthropic"
+                  value: "gemini"
                 - name: LLM_MODEL
-                  value: ""
+                  value: "gemini-2.5-flash"
                 - name: LLM_BASE_URL
-                  value: ""
+                  value: "https://generativelanguage.googleapis.com/v1beta/openai"
                 # AUTH_MODE: "api-key" (default) or "credentials"
                 - name: AUTH_MODE
                   value: "api-key"
