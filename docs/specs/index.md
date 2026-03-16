@@ -20,10 +20,14 @@ This section defines the work required to evolve Lucas from a Claude-specific ru
 - `implementation-plan-provider-backends.md`: execution breakdown, milestones, dependencies, and delivery order.
 - `qa-rollout-provider-backends.md`: verification matrix, migration checklist, rollout plan, and fallback plan.
 - `status-first-reporting.md`: reporting contract for pod-state-first scheduled summaries and compatibility rules.
+- `prd-drift-auditor.md`: product goals, scope, and acceptance criteria for deterministic drift detection.
+- `trd-drift-auditor.md`: technical design for storage/code/runtime drift auditing and remediation guidance.
+- `implementation-plan-drift-auditor.md`: execution plan for the first read-only scheduled drift-auditor release.
 - `prod-transition.md`: production-transition policy, env-file workflow, and dev/prod rollout boundaries.
 - `gemini-flash-dev-backend.md`: draft proposal for adding Gemini Flash as a development-only backend candidate.
 - OpenRouter provider support is documented in the provider-agnostic backend docs.
+- Drift-auditor design is the next operations-hardening track.
 
 ## Intended use
 
-Read the PRD first to align on problem and scope. Use the TRD to implement the architecture. Use the implementation and QA documents to sequence work and verify release readiness.
+Read the PRD first to align on problem and scope. Use the TRD to implement the architecture. Use the implementation and QA documents to sequence work and verify release readiness. Use the drift-auditor specs as the next design track for Kubernetes operations hardening.
