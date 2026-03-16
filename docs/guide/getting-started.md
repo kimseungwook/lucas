@@ -4,7 +4,7 @@
 
 - A Kubernetes cluster.
 - Kubernetes Secrets, Sealed Secrets, or another secret manager.
-- A provider API key for Claude, Groq, or Kimi.
+- A provider API key for Claude, Groq, Kimi, Gemini, or OpenRouter.
 - A Slack app with a bot token (`xoxb-`) and an app token (`xapp-`) for Socket Mode.
 - A container registry to push images.
 

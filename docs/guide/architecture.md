@@ -7,11 +7,12 @@
 - **Dashboard**: web UI for runs, sessions, fixes, and token usage.
 - **SQLite**: shared database for runs, fixes, sessions, and token usage.
 - **PVCs**: persistent storage for `lucas.db`, logs, and Claude sessions when resume support is enabled.
+- **OpenViking (optional)**: environment-provided memory/context support when available.
 
 ## Data flow
 
 1. A Slack mention or a scheduled scan triggers the agent.
-2. The agent resolves the configured LLM backend and runs either Claude Code or an OpenAI-compatible provider with kubectl access.
+2. The agent resolves the configured LLM backend and runs either Claude Code or an OpenAI-compatible provider (Groq, Kimi, Gemini, OpenRouter) with kubectl access.
 3. Findings are written to SQLite.
 4. The dashboard reads from SQLite.
 
@@ -27,3 +28,7 @@ Lucas behavior is driven by master prompt files included in the agent image. The
 - CronJob: `master-prompt-autonomous.md` or `master-prompt-report.md`.
 
 The prompt defines the rules of engagement, required output format, and runbook usage. Variables like `$TARGET_NAMESPACE`, `$SQLITE_PATH`, `$RUN_ID`, and `$LAST_RUN_TIME` are replaced at runtime.
+
+## OpenViking context note
+
+OpenViking can provide memory or context support in supported environments, but Lucas must not assume OpenViking tools, long-term memory, or Claude-style resume are always available. When that support is absent, Lucas should rely only on the current prompt, explicit context, and live Kubernetes data.
