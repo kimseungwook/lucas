@@ -23,6 +23,9 @@ This section defines the work required to evolve Lucas from a Claude-specific ru
 - `prd-drift-auditor.md`: product goals, scope, and acceptance criteria for deterministic drift detection.
 - `trd-drift-auditor.md`: technical design for storage/code/runtime drift auditing and remediation guidance.
 - `implementation-plan-drift-auditor.md`: execution plan for the first read-only scheduled drift-auditor release.
+- `implementation-plan-redis-safe-self-recovery.md`: execution plan for feature-flagged Redis safe self-recovery in scheduled monitoring.
+- `trd-redis-safe-self-recovery.md`: technical design for Redis health gating, suppression, locking, and single-pod recovery.
+- `prd-redis-safe-self-recovery.md`: product scope for rollout-aware Redis self-recovery with shallow automatic action.
 - `prod-transition.md`: production-transition policy, env-file workflow, and dev/prod rollout boundaries.
 - `gemini-flash-dev-backend.md`: draft proposal for adding Gemini Flash as a development-only backend candidate.
 - OpenRouter provider support is documented in the provider-agnostic backend docs.
@@ -30,4 +33,4 @@ This section defines the work required to evolve Lucas from a Claude-specific ru
 
 ## Intended use
 
-Read the PRD first to align on problem and scope. Use the TRD to implement the architecture. Use the implementation and QA documents to sequence work and verify release readiness. Use the drift-auditor specs as the next design track for Kubernetes operations hardening.
+Read the PRD first to align on problem and scope. Use the TRD to implement the architecture. Use the implementation and QA documents to sequence work and verify release readiness. Use the drift-auditor specs and Redis self-recovery specs as the next design tracks for Kubernetes operations hardening.
