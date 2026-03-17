@@ -29,3 +29,11 @@ If `SRE_ALERT_CHANNEL` is empty, scheduled scans are disabled.
 - The first drift-auditor release is read-only.
 - It reports evidence, likely cause, and remediation steps.
 - The first release targets storage/node-placement drift, runtime surface drift, and deployment-vs-cron runtime configuration drift.
+
+## Redis safe self-recovery
+
+- The first Redis self-recovery release is opt-in.
+- Automatic action is limited to deleting a single Redis pod.
+- Redis self-recovery uses Kubernetes signals plus a Redis serveability probe.
+- Rollout/update suppression and infra-correlated suppression can skip recovery even when Redis looks bad.
+- Production should keep Redis self-heal mutation flags disabled until dev validation is complete.
