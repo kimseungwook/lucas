@@ -11,12 +11,14 @@ from typing import Any, cast
 try:
     from .cluster_snapshot import build_multi_namespace_snapshot, build_namespace_snapshot, resolve_target_namespaces, summarize_cluster_overview
     from .drift_auditor import build_drift_audit_result, collect_runtime_drift_inputs
+    from .redis_recovery import build_redis_recovery_result, collect_redis_recovery_inputs
     from .llm import calculate_cost, create_backend, resolve_llm_config, validate_llm_config
     from .report_utils import extract_report_payload, format_slack_scan_message, parse_run_report
     from .sessions import RunStore
 except ImportError:
     cluster_snapshot = importlib.import_module("cluster_snapshot")
     drift_auditor = importlib.import_module("drift_auditor")
+    redis_recovery = importlib.import_module("redis_recovery")
     llm = importlib.import_module("llm")
     report_utils = importlib.import_module("report_utils")
     sessions = importlib.import_module("sessions")
@@ -28,6 +30,9 @@ except ImportError:
 
     build_drift_audit_result = drift_auditor.build_drift_audit_result
     collect_runtime_drift_inputs = drift_auditor.collect_runtime_drift_inputs
+
+    build_redis_recovery_result = redis_recovery.build_redis_recovery_result
+    collect_redis_recovery_inputs = redis_recovery.collect_redis_recovery_inputs
 
     calculate_cost = llm.calculate_cost
     create_backend = llm.create_backend
@@ -84,8 +89,10 @@ def build_stored_report_payload(
     reason_breakdown: dict[str, Any],
     top_problematic_pods: list[dict[str, Any]],
     drift_audit: dict[str, Any] | None = None,
+    redis_recovery: dict[str, Any] | None = None,
 ) -> str:
     drift_audit = drift_audit or {"drift_summary": {}, "drifts": []}
+    redis_recovery = redis_recovery or {"redis_recovery_summary": {}, "redis_recovery_findings": []}
     return json.dumps(
         {
             "scope": run_scope,
@@ -104,6 +111,8 @@ def build_stored_report_payload(
             "details": details,
             "drift_summary": drift_audit.get("drift_summary", {}),
             "drifts": drift_audit.get("drifts", []),
+            "redis_recovery_summary": redis_recovery.get("redis_recovery_summary", {}),
+            "redis_recovery_findings": redis_recovery.get("redis_recovery_findings", []),
         },
         ensure_ascii=False,
     )
@@ -167,6 +176,71 @@ async def main() -> None:
         drift_summary: dict[str, Any] = raw_drift_summary if isinstance(raw_drift_summary, dict) else {}
         drifts: list[Any] = list(raw_drifts) if isinstance(raw_drifts, list) else []
 
+        redis_self_heal_enabled = os.environ.get("REDIS_SELF_HEAL_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+        redis_self_heal_mutations_allowed = os.environ.get("REDIS_SELF_HEAL_MUTATIONS_ALLOWED", "false").strip().lower() in {"1", "true", "yes", "on"}
+        redis_allowed_environments = [value.strip() for value in os.environ.get("REDIS_SELF_HEAL_ALLOWED_ENVIRONMENTS", "dev").split(",") if value.strip()]
+        current_environment = os.environ.get("LUCAS_ENVIRONMENT", "")
+        redis_cooldown_seconds = int(os.environ.get("REDIS_SELF_HEAL_COOLDOWN_SECONDS", "600") or "600")
+
+        redis_inputs = collect_redis_recovery_inputs(target_namespaces)
+        recent_actions: dict[str, dict[str, Any]] = {}
+        for item in redis_inputs:
+            workload = item.get("workload", {})
+            latest_action = await run_store.get_latest_recovery_action(
+                str(workload.get("namespace", "")),
+                str(workload.get("kind", "")),
+                str(workload.get("name", "")),
+            )
+            if latest_action:
+                from datetime import datetime, timezone
+                try:
+                    ts = int(datetime.strptime(latest_action["created_at"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp())
+                except Exception:
+                    ts = 0
+                recent_actions[f"{workload.get('namespace','')}/{workload.get('kind','')}/{workload.get('name','')}"] = {"timestamp": ts, **latest_action}
+
+        def execute_delete(namespace: str, pod_name: str) -> str:
+            import subprocess
+            command = ["kubectl"]
+            context = os.environ.get("KUBECTL_CONTEXT", "").strip()
+            if context:
+                command.extend(["--context", context])
+            command.extend(["delete", "pod", pod_name, "-n", namespace])
+            result = subprocess.run(command, capture_output=True, text=True)
+            output = "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part).strip()
+            if result.returncode != 0:
+                raise RuntimeError(output or f"kubectl failed with exit code {result.returncode}")
+            return output or f"Deleted pod {namespace}/{pod_name}"
+
+        redis_recovery = build_redis_recovery_result(
+            redis_inputs,
+            auto_delete_enabled=redis_self_heal_enabled,
+            mutations_allowed=redis_self_heal_mutations_allowed,
+            current_environment=current_environment,
+            allowed_environments=redis_allowed_environments,
+            cooldown_seconds=redis_cooldown_seconds,
+            recent_actions=recent_actions,
+            action_executor=execute_delete,
+        )
+        for finding in redis_recovery.get("redis_recovery_findings", []):
+            if finding.get("action") == "delete_pod":
+                workload_text = str(finding.get("workload", "unknown/unknown"))
+                workload_kind, workload_name = (workload_text.split("/", 1) + [""])[:2]
+                await run_store.record_recovery_action(
+                    namespace=str(finding.get("namespace", "")),
+                    workload_kind=workload_kind,
+                    workload_name=workload_name,
+                    pod_name=str(finding.get("target_pod", "")) or None,
+                    action="delete_pod",
+                    status="executed",
+                    reason=str(finding.get("likely_cause", "")) or None,
+                )
+
+        raw_redis_summary = redis_recovery.get("redis_recovery_summary", {}) if isinstance(redis_recovery, dict) else {}
+        raw_redis_findings = redis_recovery.get("redis_recovery_findings", []) if isinstance(redis_recovery, dict) else []
+        redis_recovery_summary: dict[str, Any] = raw_redis_summary if isinstance(raw_redis_summary, dict) else {}
+        redis_recovery_findings: list[Any] = list(raw_redis_findings) if isinstance(raw_redis_findings, list) else []
+
         if config.backend == "openai-compatible":
             snapshot = build_multi_namespace_snapshot(target_namespaces) if len(target_namespaces) > 1 else build_namespace_snapshot(target_namespace)
             prompt = (
@@ -214,6 +288,7 @@ async def main() -> None:
                 reason_breakdown=reason_breakdown,
                 top_problematic_pods=top_problematic_pods,
                 drift_audit=cast(dict[str, Any], drift_audit),
+                redis_recovery=cast(dict[str, Any], redis_recovery),
             )
             full_log = report
             result = {"input_tokens": 0, "output_tokens": 0, "model": config.model, "cost": 0.0}
@@ -241,6 +316,10 @@ async def main() -> None:
             parsed_drifts = parsed_report.get("drifts")
             drift_summary = parsed_drift_summary if isinstance(parsed_drift_summary, dict) else drift_summary
             drifts = list(parsed_drifts) if isinstance(parsed_drifts, list) else drifts
+            parsed_redis_summary = parsed_report.get("redis_recovery_summary")
+            parsed_redis_findings = parsed_report.get("redis_recovery_findings")
+            redis_recovery_summary = parsed_redis_summary if isinstance(parsed_redis_summary, dict) else redis_recovery_summary
+            redis_recovery_findings = list(parsed_redis_findings) if isinstance(parsed_redis_findings, list) else redis_recovery_findings
 
         if cluster_overview is not None and config.backend != "openai-compatible":
             pod_count = cluster_overview["pod_count"]
@@ -281,6 +360,8 @@ async def main() -> None:
         top_problematic_pods = top_problematic_pods if isinstance(top_problematic_pods, list) else []
         drift_summary = drift_summary if isinstance(drift_summary, dict) else {}
         drifts = drifts if isinstance(drifts, list) else []
+        redis_recovery_summary = redis_recovery_summary if isinstance(redis_recovery_summary, dict) else {}
+        redis_recovery_findings = redis_recovery_findings if isinstance(redis_recovery_findings, list) else []
 
         report = build_stored_report_payload(
             run_scope=run_scope,
@@ -296,6 +377,7 @@ async def main() -> None:
             reason_breakdown=reason_breakdown,
             top_problematic_pods=top_problematic_pods,
             drift_audit={"drift_summary": drift_summary, "drifts": drifts},
+            redis_recovery={"redis_recovery_summary": redis_recovery_summary, "redis_recovery_findings": redis_recovery_findings},
         )
 
         cost = result.get("cost", 0.0)
@@ -346,6 +428,8 @@ async def main() -> None:
                 top_problematic_pods=top_problematic_pods,
                 drift_summary=drift_summary,
                 drifts=cast(list[dict[str, Any]], drifts),
+                redis_recovery_summary=cast(dict[str, int], redis_recovery_summary),
+                redis_recovery_findings=cast(list[dict[str, Any]], redis_recovery_findings),
             )
         )
         logger.info("Run #%s completed with status=%s", run_id, status)

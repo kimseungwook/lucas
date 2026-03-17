@@ -67,6 +67,38 @@ class CronRunnerTests(unittest.TestCase):
         self.assertEqual(parsed["drift_summary"]["storage"], 1)
         self.assertEqual(parsed["drifts"][0]["type"], "storage.node_placement_mismatch")
 
+    def test_build_stored_report_payload_includes_redis_recovery_fields(self):
+        report = build_stored_report_payload(
+            run_scope="cache",
+            run_id=43,
+            status="issues_found",
+            pod_count=1,
+            error_count=1,
+            fix_count=0,
+            summary="redis unhealthy",
+            details=[{"pod": "cache/redis-0", "issue": "PING timeout"}],
+            pods_with_restarts=1,
+            status_breakdown={"Running": 1},
+            reason_breakdown={"Readiness probe failed": 1},
+            top_problematic_pods=[{"namespace": "cache", "pod": "redis-0", "phase": "Running", "reason": "Readiness probe failed", "restarts": 4}],
+            redis_recovery={
+                "redis_recovery_summary": {"evaluated": 1, "not_serving": 1, "suppressed": 0, "actions_taken": 1},
+                "redis_recovery_findings": [
+                    {
+                        "type": "redis.safe_self_recovery",
+                        "workload": "StatefulSet/redis",
+                        "namespace": "cache",
+                        "health": "not_serving",
+                        "action": "delete_pod",
+                        "target_pod": "redis-0",
+                    }
+                ],
+            },
+        )
+        parsed = parse_run_report(report)
+        self.assertEqual(parsed["redis_recovery_summary"]["actions_taken"], 1)
+        self.assertEqual(parsed["redis_recovery_findings"][0]["action"], "delete_pod")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -42,6 +42,8 @@ def parse_run_report(report: str) -> dict[str, Any]:
         "top_problematic_pods": [],
         "drift_summary": {},
         "drifts": [],
+        "redis_recovery_summary": {},
+        "redis_recovery_findings": [],
     }
 
     try:
@@ -65,6 +67,10 @@ def parse_run_report(report: str) -> dict[str, Any]:
         parsed["drift_summary"] = drift_summary if isinstance(drift_summary, dict) else {}
         drifts = payload.get("drifts") or []
         parsed["drifts"] = drifts if isinstance(drifts, list) else []
+        redis_recovery_summary = payload.get("redis_recovery_summary") or {}
+        parsed["redis_recovery_summary"] = redis_recovery_summary if isinstance(redis_recovery_summary, dict) else {}
+        redis_recovery_findings = payload.get("redis_recovery_findings") or []
+        parsed["redis_recovery_findings"] = redis_recovery_findings if isinstance(redis_recovery_findings, list) else []
         if not parsed["details"] and parsed["top_problematic_pods"]:
             parsed["details"] = [
                 {
@@ -105,6 +111,8 @@ def format_slack_scan_message(
     top_problematic_pods: list[dict[str, Any]] | None = None,
     drift_summary: dict[str, int] | None = None,
     drifts: list[dict[str, Any]] | None = None,
+    redis_recovery_summary: dict[str, int] | None = None,
+    redis_recovery_findings: list[dict[str, Any]] | None = None,
 ) -> str:
     lines = [
         "*Lucas 정기 점검*",
@@ -151,6 +159,66 @@ def format_slack_scan_message(
             if likely_cause:
                 prefix += f": {likely_cause}"
             lines.append(prefix[:300])
+
+    if redis_recovery_summary:
+        lines.append("redis_recovery_summary")
+        summary_parts = []
+        for key in ["evaluated", "not_serving", "suppressed", "actions_taken"]:
+            if key in redis_recovery_summary:
+                summary_parts.append(f"{key}={redis_recovery_summary[key]}")
+        lines.append("- " + " ".join(summary_parts[:4]))
+
+    redis_items = redis_recovery_findings or []
+    if redis_items:
+        lines.append("redis_recovery_findings")
+        for item in redis_items[:3]:
+            if not isinstance(item, dict):
+                continue
+            finding_type = str(item.get("type") or "redis.safe_self_recovery")
+            workload = str(item.get("workload") or "")
+            health = str(item.get("health") or "")
+            action = str(item.get("action") or "")
+            likely_cause = str(item.get("likely_cause") or "")
+            line = f"- {finding_type}"
+            if workload:
+                line += f" @ {workload}"
+            if health:
+                line += f" health={health}"
+            if action:
+                line += f" action={action}"
+            if likely_cause:
+                line += f": {likely_cause}"
+            lines.append(line[:300])
+
+    if redis_recovery_summary:
+        lines.append("redis_recovery_summary")
+        summary_parts = []
+        for key in ["evaluated", "not_serving", "suppressed", "actions_taken"]:
+            if key in redis_recovery_summary:
+                summary_parts.append(f"{key}={redis_recovery_summary[key]}")
+        lines.append("- " + " ".join(summary_parts[:4]))
+
+    recovery_items = redis_recovery_findings or []
+    if recovery_items:
+        lines.append("redis_recovery_findings")
+        for item in recovery_items[:3]:
+            if not isinstance(item, dict):
+                continue
+            finding_type = str(item.get("type") or "redis.safe_self_recovery")
+            health = str(item.get("health") or "")
+            action = str(item.get("action") or "")
+            workload = str(item.get("workload") or "")
+            likely_cause = str(item.get("likely_cause") or "")
+            line = f"- {finding_type}"
+            if workload:
+                line += f" @ {workload}"
+            if health:
+                line += f" health={health}"
+            if action:
+                line += f" action={action}"
+            if likely_cause:
+                line += f": {likely_cause}"
+            lines.append(line[:300])
 
     clean_summary = _sanitize_summary(summary)
     problematic = top_problematic_pods or []
