@@ -1,10 +1,12 @@
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src/agent/main"))
 sys.modules.setdefault("aiosqlite", MagicMock())
+sys.modules.setdefault("dotenv", SimpleNamespace(load_dotenv=lambda *args, **kwargs: None))
 
 from cron_runner import build_stored_report_payload
 from report_utils import extract_report_payload, parse_run_report

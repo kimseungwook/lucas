@@ -318,8 +318,10 @@ async def main() -> None:
             drifts = list(parsed_drifts) if isinstance(parsed_drifts, list) else drifts
             parsed_redis_summary = parsed_report.get("redis_recovery_summary")
             parsed_redis_findings = parsed_report.get("redis_recovery_findings")
-            redis_recovery_summary = parsed_redis_summary if isinstance(parsed_redis_summary, dict) else redis_recovery_summary
-            redis_recovery_findings = list(parsed_redis_findings) if isinstance(parsed_redis_findings, list) else redis_recovery_findings
+            if isinstance(parsed_redis_summary, dict) and parsed_redis_summary:
+                redis_recovery_summary = parsed_redis_summary
+            if isinstance(parsed_redis_findings, list) and parsed_redis_findings:
+                redis_recovery_findings = list(parsed_redis_findings)
 
         if cluster_overview is not None and config.backend != "openai-compatible":
             pod_count = cluster_overview["pod_count"]
@@ -354,6 +356,10 @@ async def main() -> None:
             raw_drifts = drift_audit.get("drifts", []) if isinstance(drift_audit, dict) else []
             drift_summary = raw_drift_summary if isinstance(raw_drift_summary, dict) else {}
             drifts = list(raw_drifts) if isinstance(raw_drifts, list) else []
+            raw_redis_summary = redis_recovery.get("redis_recovery_summary", {}) if isinstance(redis_recovery, dict) else {}
+            raw_redis_findings = redis_recovery.get("redis_recovery_findings", []) if isinstance(redis_recovery, dict) else []
+            redis_recovery_summary = raw_redis_summary if isinstance(raw_redis_summary, dict) else {}
+            redis_recovery_findings = list(raw_redis_findings) if isinstance(raw_redis_findings, list) else []
 
         status_breakdown = status_breakdown if isinstance(status_breakdown, dict) else {}
         reason_breakdown = reason_breakdown if isinstance(reason_breakdown, dict) else {}
