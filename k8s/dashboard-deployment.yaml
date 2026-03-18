@@ -23,15 +23,32 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            - name: SQLITE_PATH
-              value: "/data/lucas.db"
+            - name: POSTGRES_HOST
+              value: "lucas-postgres"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: database
+                  optional: true
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: username
+                  optional: true
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: password
+                  optional: true
+            - name: POSTGRES_SSLMODE
+              value: "disable"
             - name: PORT
               value: "8080"
-            - name: LOG_PATH
-              value: "/data/lucas.log"
-          volumeMounts:
-            - name: data
-              mountPath: /data
           resources:
             requests:
               memory: "64Mi"
@@ -51,7 +68,3 @@ spec:
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: lucas-data

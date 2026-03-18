@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lucas-postgres-auth
+  namespace: a2w-lucas
+type: Opaque
+stringData:
+  username: lucas
+  password: lucas
+  database: lucas
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lucas-postgres-data
+  namespace: a2w-lucas
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lucas-postgres
+  namespace: a2w-lucas
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lucas-postgres
+  template:
+    metadata:
+      labels:
+        app: lucas-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: database
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: lucas-postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lucas-postgres
+  namespace: a2w-lucas
+spec:
+  selector:
+    app: lucas-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
