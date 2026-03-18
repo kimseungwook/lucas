@@ -101,6 +101,36 @@ class CronRunnerTests(unittest.TestCase):
         self.assertEqual(parsed["redis_recovery_summary"]["actions_taken"], 1)
         self.assertEqual(parsed["redis_recovery_findings"][0]["action"], "delete_pod")
 
+    def test_build_stored_report_payload_includes_security_suspicion_fields(self):
+        report = build_stored_report_payload(
+            run_scope="payments",
+            run_id=44,
+            status="issues_found",
+            pod_count=2,
+            error_count=1,
+            fix_count=0,
+            summary="security suspicion found",
+            details=[{"pod": "payments/api", "issue": "suspicious outbound behavior"}],
+            pods_with_restarts=0,
+            status_breakdown={"Running": 2},
+            reason_breakdown={"Warning": 1},
+            top_problematic_pods=[{"namespace": "payments", "pod": "api", "phase": "Running", "reason": "Warning", "restarts": 0}],
+            security_suspicion={
+                "security_suspicion_summary": {"findings": 1, "high": 1, "medium": 0, "evaluated_namespaces": 1},
+                "security_suspicion_findings": [
+                    {
+                        "type": "security.suspicious_behavior",
+                        "namespace": "payments",
+                        "severity": "high",
+                        "resource": "Pod/api",
+                    }
+                ],
+            },
+        )
+        parsed = parse_run_report(report)
+        self.assertEqual(parsed["security_suspicion_summary"]["findings"], 1)
+        self.assertEqual(parsed["security_suspicion_findings"][0]["type"], "security.suspicious_behavior")
+
 
 if __name__ == "__main__":
     unittest.main()

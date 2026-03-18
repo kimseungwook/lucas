@@ -44,6 +44,8 @@ def parse_run_report(report: str) -> dict[str, Any]:
         "drifts": [],
         "redis_recovery_summary": {},
         "redis_recovery_findings": [],
+        "security_suspicion_summary": {},
+        "security_suspicion_findings": [],
     }
 
     try:
@@ -71,6 +73,10 @@ def parse_run_report(report: str) -> dict[str, Any]:
         parsed["redis_recovery_summary"] = redis_recovery_summary if isinstance(redis_recovery_summary, dict) else {}
         redis_recovery_findings = payload.get("redis_recovery_findings") or []
         parsed["redis_recovery_findings"] = redis_recovery_findings if isinstance(redis_recovery_findings, list) else []
+        security_suspicion_summary = payload.get("security_suspicion_summary") or {}
+        parsed["security_suspicion_summary"] = security_suspicion_summary if isinstance(security_suspicion_summary, dict) else {}
+        security_suspicion_findings = payload.get("security_suspicion_findings") or []
+        parsed["security_suspicion_findings"] = security_suspicion_findings if isinstance(security_suspicion_findings, list) else []
         if not parsed["details"] and parsed["top_problematic_pods"]:
             parsed["details"] = [
                 {
@@ -113,6 +119,8 @@ def format_slack_scan_message(
     drifts: list[dict[str, Any]] | None = None,
     redis_recovery_summary: dict[str, int] | None = None,
     redis_recovery_findings: list[dict[str, Any]] | None = None,
+    security_suspicion_summary: dict[str, int] | None = None,
+    security_suspicion_findings: list[dict[str, Any]] | None = None,
 ) -> str:
     lines = [
         "*Lucas 정기 점검*",
@@ -218,6 +226,33 @@ def format_slack_scan_message(
                 line += f" action={action}"
             if likely_cause:
                 line += f": {likely_cause}"
+            lines.append(line[:300])
+
+    if security_suspicion_summary:
+        lines.append("security_suspicion_summary")
+        summary_parts = []
+        for key in ["findings", "high", "medium", "evaluated_namespaces"]:
+            if key in security_suspicion_summary:
+                summary_parts.append(f"{key}={security_suspicion_summary[key]}")
+        lines.append("- " + " ".join(summary_parts[:4]))
+
+    security_items = security_suspicion_findings or []
+    if security_items:
+        lines.append("security_suspicion_findings")
+        for item in security_items[:3]:
+            if not isinstance(item, dict):
+                continue
+            finding_type = str(item.get("type") or "security.suspicious_behavior")
+            namespace = str(item.get("namespace") or "")
+            severity = str(item.get("severity") or "")
+            likely_scenario = str(item.get("likely_scenario") or "")
+            line = f"- {finding_type}"
+            if namespace:
+                line += f" @ {namespace}"
+            if severity:
+                line += f" severity={severity}"
+            if likely_scenario:
+                line += f": {likely_scenario}"
             lines.append(line[:300])
 
     clean_summary = _sanitize_summary(summary)

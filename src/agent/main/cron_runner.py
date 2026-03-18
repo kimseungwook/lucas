@@ -12,6 +12,8 @@ try:
     from .cluster_snapshot import build_multi_namespace_snapshot, build_namespace_snapshot, resolve_target_namespaces, summarize_cluster_overview
     from .drift_auditor import build_drift_audit_result, collect_runtime_drift_inputs
     from .redis_recovery import build_redis_recovery_result, collect_redis_recovery_inputs
+    from .security_signal_collection import collect_security_signal_inputs
+    from .security_compensating_control import build_security_suspicion_result
     from .llm import calculate_cost, create_backend, resolve_llm_config, validate_llm_config
     from .report_utils import extract_report_payload, format_slack_scan_message, parse_run_report
     from .sessions import RunStore
@@ -19,6 +21,8 @@ except ImportError:
     cluster_snapshot = importlib.import_module("cluster_snapshot")
     drift_auditor = importlib.import_module("drift_auditor")
     redis_recovery = importlib.import_module("redis_recovery")
+    security_signal_collection = importlib.import_module("security_signal_collection")
+    security_compensating_control = importlib.import_module("security_compensating_control")
     llm = importlib.import_module("llm")
     report_utils = importlib.import_module("report_utils")
     sessions = importlib.import_module("sessions")
@@ -33,6 +37,9 @@ except ImportError:
 
     build_redis_recovery_result = redis_recovery.build_redis_recovery_result
     collect_redis_recovery_inputs = redis_recovery.collect_redis_recovery_inputs
+
+    collect_security_signal_inputs = security_signal_collection.collect_security_signal_inputs
+    build_security_suspicion_result = security_compensating_control.build_security_suspicion_result
 
     calculate_cost = llm.calculate_cost
     create_backend = llm.create_backend
@@ -90,9 +97,11 @@ def build_stored_report_payload(
     top_problematic_pods: list[dict[str, Any]],
     drift_audit: dict[str, Any] | None = None,
     redis_recovery: dict[str, Any] | None = None,
+    security_suspicion: dict[str, Any] | None = None,
 ) -> str:
     drift_audit = drift_audit or {"drift_summary": {}, "drifts": []}
     redis_recovery = redis_recovery or {"redis_recovery_summary": {}, "redis_recovery_findings": []}
+    security_suspicion = security_suspicion or {"security_suspicion_summary": {}, "security_suspicion_findings": []}
     return json.dumps(
         {
             "scope": run_scope,
@@ -113,6 +122,8 @@ def build_stored_report_payload(
             "drifts": drift_audit.get("drifts", []),
             "redis_recovery_summary": redis_recovery.get("redis_recovery_summary", {}),
             "redis_recovery_findings": redis_recovery.get("redis_recovery_findings", []),
+            "security_suspicion_summary": security_suspicion.get("security_suspicion_summary", {}),
+            "security_suspicion_findings": security_suspicion.get("security_suspicion_findings", []),
         },
         ensure_ascii=False,
     )
@@ -241,6 +252,13 @@ async def main() -> None:
         redis_recovery_summary: dict[str, Any] = raw_redis_summary if isinstance(raw_redis_summary, dict) else {}
         redis_recovery_findings: list[Any] = list(raw_redis_findings) if isinstance(raw_redis_findings, list) else []
 
+        security_signal_bundle = collect_security_signal_inputs()
+        security_suspicion = build_security_suspicion_result(cast(dict[str, Any], security_signal_bundle))
+        raw_security_summary = security_suspicion.get("security_suspicion_summary", {}) if isinstance(security_suspicion, dict) else {}
+        raw_security_findings = security_suspicion.get("security_suspicion_findings", []) if isinstance(security_suspicion, dict) else []
+        security_suspicion_summary: dict[str, Any] = raw_security_summary if isinstance(raw_security_summary, dict) else {}
+        security_suspicion_findings: list[Any] = list(raw_security_findings) if isinstance(raw_security_findings, list) else []
+
         if config.backend == "openai-compatible":
             snapshot = build_multi_namespace_snapshot(target_namespaces) if len(target_namespaces) > 1 else build_namespace_snapshot(target_namespace)
             prompt = (
@@ -289,6 +307,7 @@ async def main() -> None:
                 top_problematic_pods=top_problematic_pods,
                 drift_audit=cast(dict[str, Any], drift_audit),
                 redis_recovery=cast(dict[str, Any], redis_recovery),
+                security_suspicion=cast(dict[str, Any], security_suspicion),
             )
             full_log = report
             result = {"input_tokens": 0, "output_tokens": 0, "model": config.model, "cost": 0.0}
@@ -322,6 +341,12 @@ async def main() -> None:
                 redis_recovery_summary = parsed_redis_summary
             if isinstance(parsed_redis_findings, list) and parsed_redis_findings:
                 redis_recovery_findings = list(parsed_redis_findings)
+            parsed_security_summary = parsed_report.get("security_suspicion_summary")
+            parsed_security_findings = parsed_report.get("security_suspicion_findings")
+            if isinstance(parsed_security_summary, dict) and parsed_security_summary:
+                security_suspicion_summary = parsed_security_summary
+            if isinstance(parsed_security_findings, list) and parsed_security_findings:
+                security_suspicion_findings = list(parsed_security_findings)
 
         if cluster_overview is not None and config.backend != "openai-compatible":
             pod_count = cluster_overview["pod_count"]
@@ -368,6 +393,8 @@ async def main() -> None:
         drifts = drifts if isinstance(drifts, list) else []
         redis_recovery_summary = redis_recovery_summary if isinstance(redis_recovery_summary, dict) else {}
         redis_recovery_findings = redis_recovery_findings if isinstance(redis_recovery_findings, list) else []
+        security_suspicion_summary = security_suspicion_summary if isinstance(security_suspicion_summary, dict) else {}
+        security_suspicion_findings = security_suspicion_findings if isinstance(security_suspicion_findings, list) else []
 
         report = build_stored_report_payload(
             run_scope=run_scope,
@@ -384,6 +411,7 @@ async def main() -> None:
             top_problematic_pods=top_problematic_pods,
             drift_audit={"drift_summary": drift_summary, "drifts": drifts},
             redis_recovery={"redis_recovery_summary": redis_recovery_summary, "redis_recovery_findings": redis_recovery_findings},
+            security_suspicion={"security_suspicion_summary": security_suspicion_summary, "security_suspicion_findings": security_suspicion_findings},
         )
 
         cost = result.get("cost", 0.0)
@@ -436,6 +464,8 @@ async def main() -> None:
                 drifts=cast(list[dict[str, Any]], drifts),
                 redis_recovery_summary=cast(dict[str, int], redis_recovery_summary),
                 redis_recovery_findings=cast(list[dict[str, Any]], redis_recovery_findings),
+                security_suspicion_summary=cast(dict[str, int], security_suspicion_summary),
+                security_suspicion_findings=cast(list[dict[str, Any]], security_suspicion_findings),
             )
         )
         logger.info("Run #%s completed with status=%s", run_id, status)
