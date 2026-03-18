@@ -38,7 +38,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:16-alpine
+          image: docker.io/library/postgres:16-alpine
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5432
@@ -58,6 +58,8 @@ spec:
                 secretKeyRef:
                   name: lucas-postgres-auth
                   key: database
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
