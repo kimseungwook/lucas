@@ -5,7 +5,13 @@
     <a href="/?ns={{.Namespace}}&run={{.ID}}"
        class="block px-3 py-3 hover:bg-neutral-100 transition-colors">
         <div class="flex items-center justify-between mb-1">
-            <span class="text-sm font-medium text-neutral-900">Run #{{.ID}}</span>
+            <span class="text-sm font-medium text-neutral-900">
+                {{if .SummaryOnly}}
+                Summary of run #{{.ParentRunID}}
+                {{else}}
+                Run #{{.ID}}
+                {{end}}
+            </span>
             {{if eq .Status "ok"}}
             <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
             {{else if eq .Status "fixed"}}
@@ -22,7 +28,7 @@
             {{.StartedAt}}
         </div>
         <div class="flex items-center gap-2 mt-1 text-xs">
-            <span class="text-neutral-500">{{.Mode}}</span>
+            <span class="text-neutral-500">{{if .SummaryOnly}}summary{{else}}{{.Mode}}{{end}}</span>
             {{if gt .ErrorCount 0}}
             <span class="text-red-600">{{.ErrorCount}} errors</span>
             {{end}}

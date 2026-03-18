@@ -3,9 +3,15 @@
     <!-- Header -->
     <div class="flex items-start justify-between mb-6">
         <div>
-            <h1 class="text-xl font-semibold mb-1 text-neutral-900">Run #{{.Run.ID}}</h1>
+            <h1 class="text-xl font-semibold mb-1 text-neutral-900">
+                {{if .Run.SummaryOnly}}
+                Namespace summary for run #{{.Run.ParentRunID}}
+                {{else}}
+                Run #{{.Run.ID}}
+                {{end}}
+            </h1>
             <div class="text-sm text-neutral-500">
-                {{.Run.Namespace}} &middot; {{.Run.Mode}} mode &middot; {{.Run.StartedAt}}
+                {{.Run.Namespace}} &middot; {{if .Run.SummaryOnly}}summary{{else}}{{.Run.Mode}}{{end}} mode &middot; {{.Run.StartedAt}}
             </div>
         </div>
         <div class="flex items-center gap-2">
@@ -22,6 +28,15 @@
             {{end}}
         </div>
     </div>
+
+    {{if .Run.SummaryOnly}}
+    <div class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
+        This is a namespace summary row derived from a cluster-wide scheduled scan.
+        {{if gt .Run.ParentRunID 0}}
+        <a href="/?ns=all&run={{.Run.ParentRunID}}" class="underline font-medium">View parent run #{{.Run.ParentRunID}}</a>
+        {{end}}
+    </div>
+    {{end}}
 
     <!-- Stats -->
     <div class="grid grid-cols-3 gap-4 mb-6">
@@ -45,6 +60,13 @@
         <h2 class="text-sm font-semibold uppercase tracking-wider text-neutral-500 mb-3">Report</h2>
         <div class="bg-white rounded-lg p-4 border border-neutral-300">
             <pre class="text-sm text-neutral-700 whitespace-pre-wrap font-mono">{{.Run.Report}}</pre>
+        </div>
+    </div>
+    {{else if .Run.SummaryText}}
+    <div class="mb-6">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-neutral-500 mb-3">Summary</h2>
+        <div class="bg-white rounded-lg p-4 border border-neutral-300">
+            <pre class="text-sm text-neutral-700 whitespace-pre-wrap font-mono">{{.Run.SummaryText}}</pre>
         </div>
     </div>
     {{end}}
