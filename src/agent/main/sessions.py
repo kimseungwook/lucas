@@ -1,11 +1,11 @@
-"""Session and run store for the Lucas agent."""
-
 import importlib
+import logging
 import os
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 aiosqlite = importlib.import_module("aiosqlite")
+logger = logging.getLogger(__name__)
 
 
 class RunStore:
@@ -353,3 +353,168 @@ class SessionStore:
         async with db.execute("SELECT COUNT(*) FROM slack_sessions") as cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0
+
+
+SQLiteRunStore = RunStore
+SQLiteSessionStore = SessionStore
+
+
+class ShadowRunStore:
+    def __init__(self, db_path: str | None = None, primary: Any | None = None, mirror: Any | None = None):
+        self.primary = primary or SQLiteRunStore(db_path=db_path)
+        self.mirror = mirror
+        self._run_id_map: dict[int, int] = {}
+
+    async def connect(self):
+        await self.primary.connect()
+        if self.mirror is not None:
+            try:
+                await self.mirror.connect()
+            except Exception as exc:
+                logger.warning("Shadow Postgres connect failed: %s", exc)
+                self.mirror = None
+
+    async def close(self):
+        await self.primary.close()
+        if self.mirror is not None:
+            await self.mirror.close()
+
+    async def create_run(self, namespace: str, mode: str = "autonomous") -> int:
+        primary_id = await self.primary.create_run(namespace, mode)
+        if self.mirror is not None:
+            try:
+                mirror_id = await self.mirror.create_run(namespace, mode)
+                self._run_id_map[primary_id] = mirror_id
+            except Exception as exc:
+                logger.warning("Shadow Postgres create_run failed: %s", exc)
+        return primary_id
+
+    async def update_run(self, *args, **kwargs):
+        await self.primary.update_run(*args, **kwargs)
+        if self.mirror is not None:
+            try:
+                run_id = kwargs.get("run_id", args[0] if args else None)
+                if run_id in self._run_id_map:
+                    kwargs = dict(kwargs)
+                    kwargs["run_id"] = self._run_id_map[run_id]
+                    await self.mirror.update_run(**kwargs)
+            except Exception as exc:
+                logger.warning("Shadow Postgres update_run failed: %s", exc)
+
+    async def record_fix(self, *args, **kwargs):
+        await self.primary.record_fix(*args, **kwargs)
+        if self.mirror is not None:
+            try:
+                run_id = kwargs.get("run_id", args[0] if args else None)
+                mirror_run_id = self._run_id_map.get(int(run_id), int(run_id)) if run_id is not None else None
+                kwargs = dict(kwargs)
+                kwargs["run_id"] = mirror_run_id
+                await self.mirror.record_fix(**kwargs)
+            except Exception as exc:
+                logger.warning("Shadow Postgres record_fix failed: %s", exc)
+
+    async def record_token_usage(self, *args, **kwargs):
+        await self.primary.record_token_usage(*args, **kwargs)
+        if self.mirror is not None:
+            try:
+                run_id = kwargs.get("run_id", args[0] if args else None)
+                mirror_run_id = self._run_id_map.get(int(run_id), int(run_id)) if run_id is not None else None
+                kwargs = dict(kwargs)
+                kwargs["run_id"] = mirror_run_id
+                await self.mirror.record_token_usage(**kwargs)
+            except Exception as exc:
+                logger.warning("Shadow Postgres record_token_usage failed: %s", exc)
+
+    async def record_recovery_action(self, *args, **kwargs):
+        await self.primary.record_recovery_action(*args, **kwargs)
+        if self.mirror is not None:
+            try:
+                await self.mirror.record_recovery_action(*args, **kwargs)
+            except Exception as exc:
+                logger.warning("Shadow Postgres record_recovery_action failed: %s", exc)
+
+    async def get_latest_recovery_action(self, *args, **kwargs):
+        return await self.primary.get_latest_recovery_action(*args, **kwargs)
+
+    async def replace_run_summaries(self, parent_run_id: int, rows: list[dict[str, Any]]):
+        await self.primary.replace_run_summaries(parent_run_id, rows)
+        if self.mirror is not None:
+            try:
+                await self.mirror.replace_run_summaries(self._run_id_map.get(parent_run_id, parent_run_id), rows)
+            except Exception as exc:
+                logger.warning("Shadow Postgres replace_run_summaries failed: %s", exc)
+
+
+class ShadowSessionStore:
+    def __init__(self, db_path: str | None = None, primary: Any | None = None, mirror: Any | None = None):
+        self.primary = primary or SQLiteSessionStore(db_path=db_path)
+        self.mirror = mirror
+
+    async def connect(self):
+        await self.primary.connect()
+        if self.mirror is not None:
+            try:
+                await self.mirror.connect()
+            except Exception as exc:
+                logger.warning("Shadow Postgres session connect failed: %s", exc)
+                self.mirror = None
+
+    async def close(self):
+        await self.primary.close()
+        if self.mirror is not None:
+            await self.mirror.close()
+
+    async def save_session(self, *args, **kwargs):
+        await self.primary.save_session(*args, **kwargs)
+        if self.mirror is not None:
+            try:
+                await self.mirror.save_session(*args, **kwargs)
+            except Exception as exc:
+                logger.warning("Shadow Postgres save_session failed: %s", exc)
+
+    async def get_session(self, *args, **kwargs):
+        return await self.primary.get_session(*args, **kwargs)
+
+    async def get_channel(self, *args, **kwargs):
+        return await self.primary.get_channel(*args, **kwargs)
+
+    async def has_session(self, *args, **kwargs):
+        return await self.primary.has_session(*args, **kwargs)
+
+    async def delete_session(self, *args, **kwargs):
+        await self.primary.delete_session(*args, **kwargs)
+        if self.mirror is not None:
+            try:
+                await self.mirror.delete_session(*args, **kwargs)
+            except Exception as exc:
+                logger.warning("Shadow Postgres delete_session failed: %s", exc)
+
+    async def cleanup_old_sessions(self, *args, **kwargs):
+        count = await self.primary.cleanup_old_sessions(*args, **kwargs)
+        if self.mirror is not None:
+            try:
+                await self.mirror.cleanup_old_sessions(*args, **kwargs)
+            except Exception as exc:
+                logger.warning("Shadow Postgres cleanup_old_sessions failed: %s", exc)
+        return count
+
+    async def get_session_count(self, *args, **kwargs):
+        return await self.primary.get_session_count(*args, **kwargs)
+
+if os.environ.get("POSTGRES_HOST"):
+    try:
+        if __package__:
+            from .postgres_store import PostgresRunStore as _PostgresRunStore, PostgresSessionStore as _PostgresSessionStore
+        else:
+            postgres_store = importlib.import_module("postgres_store")
+            _PostgresRunStore = postgres_store.PostgresRunStore
+            _PostgresSessionStore = postgres_store.PostgresSessionStore
+
+        if os.environ.get("POSTGRES_SHADOW_VALIDATE", "false").strip().lower() in {"1", "true", "yes", "on"}:
+            RunStore = cast(Any, ShadowRunStore)
+            SessionStore = cast(Any, ShadowSessionStore)
+        else:
+            RunStore = cast(Any, _PostgresRunStore)
+            SessionStore = cast(Any, _PostgresSessionStore)
+    except ImportError as exc:
+        raise RuntimeError(f"Postgres storage requested but postgres_store is unavailable: {exc}") from exc
