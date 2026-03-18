@@ -123,15 +123,6 @@
             window.location.href = url.toString();
         }
 
-        function toggleLog() {
-            const panel = document.getElementById('log-panel');
-            const chevron = document.getElementById('log-chevron');
-            if (panel && chevron) {
-                panel.classList.toggle('hidden');
-                chevron.classList.toggle('rotate-180');
-            }
-        }
-
         function deleteSession(sessionId) {
             if (!confirm('Delete this session? The agent will create a new one on next interaction.')) {
                 return;
@@ -149,13 +140,6 @@
             });
         }
 
-        // Auto-scroll log
-        const logContainer = document.getElementById('live-log');
-        if (logContainer) {
-            new MutationObserver(() => {
-                logContainer.scrollTop = logContainer.scrollHeight;
-            }).observe(logContainer, { childList: true });
-        }
-    </script>
+	</script>
 </body>
 </html>

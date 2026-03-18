@@ -73,19 +73,11 @@ func authRequired(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func main() {
-	sqlitePath := os.Getenv("SQLITE_PATH")
-	if sqlitePath == "" {
-		sqlitePath = "/data/lucas.db"
-	}
+	usePostgres := os.Getenv("POSTGRES_HOST") != ""
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
-	}
-
-	logPath := os.Getenv("LOG_PATH")
-	if logPath == "" {
-		logPath = "/data/lucas.log"
 	}
 
 	// Auth credentials from env (optional)
@@ -96,7 +88,19 @@ func main() {
 		authPass = p
 	}
 
-	database, err := db.New(sqlitePath)
+	var (
+		database *db.DB
+		err      error
+	)
+	if usePostgres {
+		database, err = db.NewPostgresFromEnv()
+	} else {
+		sqlitePath := os.Getenv("SQLITE_PATH")
+		if sqlitePath == "" {
+			sqlitePath = "/data/lucas.db"
+		}
+		database, err = db.New(sqlitePath)
+	}
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
@@ -141,7 +145,7 @@ func main() {
 		log.Fatalf("Failed to parse partials: %v", err)
 	}
 
-	h := handlers.New(database, tmpl, logPath)
+	h := handlers.New(database, tmpl)
 
 	// Login page
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +205,6 @@ func main() {
 	http.HandleFunc("/partials/runs", authRequired(h.RunsList))
 	http.HandleFunc("/partials/run", authRequired(h.RunDetail))
 	http.HandleFunc("/partials/stats", authRequired(h.Stats))
-	http.HandleFunc("/partials/log", authRequired(h.LiveLog))
 	http.HandleFunc("/partials/sessions", authRequired(h.SessionsList))
 
 	// API routes (with session auth)
