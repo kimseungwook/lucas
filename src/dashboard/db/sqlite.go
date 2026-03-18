@@ -7,17 +7,20 @@ import (
 )
 
 type Run struct {
-	ID         int
-	StartedAt  string
-	EndedAt    string
-	Namespace  string
-	Mode       string
-	Status     string // ok, fixed, failed, running
-	PodCount   int
-	ErrorCount int
-	FixCount   int
-	Report     string
-	Log        string
+	ID          int
+	ParentRunID int
+	SummaryOnly bool
+	SummaryText string
+	StartedAt   string
+	EndedAt     string
+	Namespace   string
+	Mode        string
+	Status      string // ok, fixed, failed, running
+	PodCount    int
+	ErrorCount  int
+	FixCount    int
+	Report      string
+	Log         string
 }
 
 type Fix struct {
@@ -42,10 +45,10 @@ type Session struct {
 }
 
 type NamespaceStats struct {
-	Namespace  string
-	RunCount   int
-	OkCount    int
-	FixedCount int
+	Namespace   string
+	RunCount    int
+	OkCount     int
+	FixedCount  int
 	FailedCount int
 }
 
@@ -139,6 +142,26 @@ func New(path string) (*DB, error) {
 		return nil, err
 	}
 
+	_, err = conn.Exec(`
+		CREATE TABLE IF NOT EXISTS run_summaries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			parent_run_id INTEGER NOT NULL,
+			started_at TEXT NOT NULL,
+			ended_at TEXT,
+			namespace TEXT NOT NULL,
+			mode TEXT NOT NULL DEFAULT 'report',
+			status TEXT NOT NULL,
+			pod_count INTEGER DEFAULT 0,
+			error_count INTEGER DEFAULT 0,
+			fix_count INTEGER DEFAULT 0,
+			summary TEXT,
+			FOREIGN KEY (parent_run_id) REFERENCES runs(id)
+		)
+	`)
+	if err != nil {
+		return nil, err
+	}
+
 	return &DB{conn: conn}, nil
 }
 
@@ -175,20 +198,39 @@ func (db *DB) CompleteRun(id int64, status string, podCount, errorCount, fixCoun
 }
 
 func (db *DB) GetRuns(namespace string, limit int) ([]Run, error) {
-	query := `
-		SELECT id, started_at, COALESCE(ended_at, ''), namespace, mode, status,
-		       pod_count, error_count, fix_count, COALESCE(report, ''), COALESCE(log, '')
-		FROM runs
-	`
+	var query string
 	args := []interface{}{}
 
-	if namespace != "" {
-		query += " WHERE namespace = ?"
-		args = append(args, namespace)
+	if namespace == "" || namespace == "all" {
+		query = `
+			SELECT id, 0 as parent_run_id, 0 as summary_only, '' as summary_text,
+			       started_at, COALESCE(ended_at, ''), namespace, mode, status,
+			       pod_count, error_count, fix_count, COALESCE(report, ''), COALESCE(log, '')
+			FROM runs
+		`
+		if namespace == "all" {
+			query += " WHERE namespace = 'all'"
+		}
+		query += " ORDER BY started_at DESC LIMIT ?"
+		args = append(args, limit)
+	} else {
+		query = `
+			SELECT * FROM (
+				SELECT id, 0 as parent_run_id, 0 as summary_only, '' as summary_text,
+				       started_at, COALESCE(ended_at, ''), namespace, mode, status,
+				       pod_count, error_count, fix_count, COALESCE(report, ''), COALESCE(log, '')
+				FROM runs
+				WHERE namespace = ?
+				UNION ALL
+				SELECT -id as id, parent_run_id, 1 as summary_only, COALESCE(summary, '') as summary_text,
+				       started_at, COALESCE(ended_at, ''), namespace, mode, status,
+				       pod_count, error_count, fix_count, '' as report, '' as log
+				FROM run_summaries
+				WHERE namespace = ?
+			) ORDER BY started_at DESC LIMIT ?
+		`
+		args = append(args, namespace, namespace, limit)
 	}
-
-	query += " ORDER BY started_at DESC LIMIT ?"
-	args = append(args, limit)
 
 	rows, err := db.conn.Query(query, args...)
 	if err != nil {
@@ -199,7 +241,7 @@ func (db *DB) GetRuns(namespace string, limit int) ([]Run, error) {
 	var runs []Run
 	for rows.Next() {
 		var r Run
-		err := rows.Scan(&r.ID, &r.StartedAt, &r.EndedAt, &r.Namespace, &r.Mode,
+		err := rows.Scan(&r.ID, &r.ParentRunID, &r.SummaryOnly, &r.SummaryText, &r.StartedAt, &r.EndedAt, &r.Namespace, &r.Mode,
 			&r.Status, &r.PodCount, &r.ErrorCount, &r.FixCount, &r.Report, &r.Log)
 		if err != nil {
 			return nil, err
@@ -211,11 +253,26 @@ func (db *DB) GetRuns(namespace string, limit int) ([]Run, error) {
 
 func (db *DB) GetRun(id int) (*Run, error) {
 	var r Run
+	if id >= 0 {
+		err := db.conn.QueryRow(`
+			SELECT id, 0 as parent_run_id, 0 as summary_only, '' as summary_text,
+			       started_at, COALESCE(ended_at, ''), namespace, mode, status,
+			       pod_count, error_count, fix_count, COALESCE(report, ''), COALESCE(log, '')
+			FROM runs WHERE id = ?
+		`, id).Scan(&r.ID, &r.ParentRunID, &r.SummaryOnly, &r.SummaryText, &r.StartedAt, &r.EndedAt, &r.Namespace, &r.Mode,
+			&r.Status, &r.PodCount, &r.ErrorCount, &r.FixCount, &r.Report, &r.Log)
+		if err != nil {
+			return nil, err
+		}
+		return &r, nil
+	}
+
 	err := db.conn.QueryRow(`
-		SELECT id, started_at, COALESCE(ended_at, ''), namespace, mode, status,
-		       pod_count, error_count, fix_count, COALESCE(report, ''), COALESCE(log, '')
-		FROM runs WHERE id = ?
-	`, id).Scan(&r.ID, &r.StartedAt, &r.EndedAt, &r.Namespace, &r.Mode,
+		SELECT -id as id, parent_run_id, 1 as summary_only, COALESCE(summary, '') as summary_text,
+		       started_at, COALESCE(ended_at, ''), namespace, mode, status,
+		       pod_count, error_count, fix_count, '' as report, '' as log
+		FROM run_summaries WHERE id = ?
+	`, -id).Scan(&r.ID, &r.ParentRunID, &r.SummaryOnly, &r.SummaryText, &r.StartedAt, &r.EndedAt, &r.Namespace, &r.Mode,
 		&r.Status, &r.PodCount, &r.ErrorCount, &r.FixCount, &r.Report, &r.Log)
 	if err != nil {
 		return nil, err
@@ -241,7 +298,11 @@ func (db *DB) GetNamespaces() ([]NamespaceStats, error) {
 			SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) as ok_count,
 			SUM(CASE WHEN status = 'fixed' THEN 1 ELSE 0 END) as fixed_count,
 			SUM(CASE WHEN status = 'failed' OR status = 'issues_found' THEN 1 ELSE 0 END) as failed_count
-		FROM runs
+		FROM (
+			SELECT namespace, status FROM runs WHERE namespace != 'all'
+			UNION ALL
+			SELECT namespace, status FROM run_summaries
+		)
 		GROUP BY namespace
 		ORDER BY namespace
 	`)
@@ -267,15 +328,32 @@ func (db *DB) GetNamespaceStats(namespace string) (*NamespaceStats, error) {
 	s.Namespace = namespace
 
 	err := db.conn.QueryRow(`SELECT COUNT(*) FROM runs WHERE namespace = ?`, namespace).Scan(&s.RunCount)
+	err = db.conn.QueryRow(`SELECT COUNT(*) FROM (
+		SELECT namespace FROM runs WHERE namespace = ?
+		UNION ALL
+		SELECT namespace FROM run_summaries WHERE namespace = ?
+	)`, namespace, namespace).Scan(&s.RunCount)
 	if err != nil {
 		return nil, err
 	}
 	// Count 'ok' status as ok
-	db.conn.QueryRow(`SELECT COUNT(*) FROM runs WHERE namespace = ? AND status = 'ok'`, namespace).Scan(&s.OkCount)
+	db.conn.QueryRow(`SELECT COUNT(*) FROM (
+		SELECT status FROM runs WHERE namespace = ?
+		UNION ALL
+		SELECT status FROM run_summaries WHERE namespace = ?
+	) WHERE status = 'ok'`, namespace, namespace).Scan(&s.OkCount)
 	// Count 'fixed' status as fixed
-	db.conn.QueryRow(`SELECT COUNT(*) FROM runs WHERE namespace = ? AND status = 'fixed'`, namespace).Scan(&s.FixedCount)
+	db.conn.QueryRow(`SELECT COUNT(*) FROM (
+		SELECT status FROM runs WHERE namespace = ?
+		UNION ALL
+		SELECT status FROM run_summaries WHERE namespace = ?
+	) WHERE status = 'fixed'`, namespace, namespace).Scan(&s.FixedCount)
 	// Count 'failed' and 'issues_found' as failed (issues that need attention)
-	db.conn.QueryRow(`SELECT COUNT(*) FROM runs WHERE namespace = ? AND (status = 'failed' OR status = 'issues_found')`, namespace).Scan(&s.FailedCount)
+	db.conn.QueryRow(`SELECT COUNT(*) FROM (
+		SELECT status FROM runs WHERE namespace = ?
+		UNION ALL
+		SELECT status FROM run_summaries WHERE namespace = ?
+	) WHERE status = 'failed' OR status = 'issues_found'`, namespace, namespace).Scan(&s.FailedCount)
 
 	return &s, nil
 }

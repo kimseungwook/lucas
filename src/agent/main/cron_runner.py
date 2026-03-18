@@ -14,6 +14,7 @@ try:
     from .redis_recovery import build_redis_recovery_result, collect_redis_recovery_inputs
     from .security_signal_collection import collect_security_signal_inputs
     from .security_compensating_control import build_security_suspicion_result
+    from .run_summaries import build_namespace_summary_rows
     from .llm import calculate_cost, create_backend, resolve_llm_config, validate_llm_config
     from .report_utils import extract_report_payload, format_slack_scan_message, parse_run_report
     from .sessions import RunStore
@@ -23,6 +24,7 @@ except ImportError:
     redis_recovery = importlib.import_module("redis_recovery")
     security_signal_collection = importlib.import_module("security_signal_collection")
     security_compensating_control = importlib.import_module("security_compensating_control")
+    run_summaries = importlib.import_module("run_summaries")
     llm = importlib.import_module("llm")
     report_utils = importlib.import_module("report_utils")
     sessions = importlib.import_module("sessions")
@@ -40,6 +42,7 @@ except ImportError:
 
     collect_security_signal_inputs = security_signal_collection.collect_security_signal_inputs
     build_security_suspicion_result = security_compensating_control.build_security_suspicion_result
+    build_namespace_summary_rows = run_summaries.build_namespace_summary_rows
 
     calculate_cost = llm.calculate_cost
     create_backend = llm.create_backend
@@ -446,6 +449,10 @@ async def main() -> None:
             report=report[:5000] if report else None,
             log=full_log[:100000] if full_log else None,
         )
+
+        if os.environ.get("TARGET_NAMESPACES", "").strip().lower() in {"all", "*"} and cluster_overview is not None:
+            summary_rows = build_namespace_summary_rows(run_id, cluster_overview, mode=sre_mode)
+            await run_store.replace_run_summaries(run_id, summary_rows)
 
         await send_slack_webhook(
             format_slack_scan_message(
