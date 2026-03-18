@@ -81,6 +81,22 @@ class RunStore:
                 created_at TEXT NOT NULL
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS run_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_run_id INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                namespace TEXT NOT NULL,
+                mode TEXT NOT NULL DEFAULT 'report',
+                status TEXT NOT NULL,
+                pod_count INTEGER DEFAULT 0,
+                error_count INTEGER DEFAULT 0,
+                fix_count INTEGER DEFAULT 0,
+                summary TEXT,
+                FOREIGN KEY (parent_run_id) REFERENCES runs(id)
+            )
+        """)
         await db.commit()
 
     async def close(self):
@@ -205,6 +221,35 @@ class RunStore:
                 "reason": row[3],
                 "pod_name": row[4],
             }
+
+    async def replace_run_summaries(self, parent_run_id: int, rows: list[dict[str, Any]]):
+        db = self._db_conn()
+        await db.execute("DELETE FROM run_summaries WHERE parent_run_id = ?", (parent_run_id,))
+        async with db.execute(
+            "SELECT started_at, ended_at FROM runs WHERE id = ?",
+            (parent_run_id,),
+        ) as cursor:
+            parent_row = await cursor.fetchone()
+        started_at = parent_row[0] if parent_row and parent_row[0] else datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        ended_at = parent_row[1] if parent_row else None
+        for row in rows:
+            await db.execute(
+                """INSERT INTO run_summaries (parent_run_id, started_at, ended_at, namespace, mode, status, pod_count, error_count, fix_count, summary)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    parent_run_id,
+                    started_at,
+                    ended_at,
+                    row.get("namespace", ""),
+                    row.get("mode", "report"),
+                    row.get("status", "ok"),
+                    row.get("pod_count", 0),
+                    row.get("error_count", 0),
+                    row.get("fix_count", 0),
+                    row.get("summary", ""),
+                ),
+            )
+        await db.commit()
 
 
 class SessionStore:
