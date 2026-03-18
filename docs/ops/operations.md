@@ -37,3 +37,11 @@ If `SRE_ALERT_CHANNEL` is empty, scheduled scans are disabled.
 - Redis self-recovery uses Kubernetes signals plus a Redis serveability probe.
 - Rollout/update suppression and infra-correlated suppression can skip recovery even when Redis looks bad.
 - Production should keep Redis self-heal mutation flags disabled until dev validation is complete.
+
+## Virtual-node compensating malware control
+
+- The first release is report-only.
+- The feature is disabled by default.
+- Only namespaces listed in `SECURITY_MONITOR_NAMESPACES` are inspected.
+- This control is a virtual-node compensating control, not a kernel-level runtime detector.
+- Lucas/AI summarizes deterministic signals and recommends actions; it does not act as the detector itself.
