@@ -1,6 +1,6 @@
 # A2W: Lucas
 
-A Kubernetes operations and reliability agent. It runs in-cluster, inspects pods and logs, can report or remediate issues based on mode, and exposes a dashboard backed by SQLite.
+A Kubernetes operations and reliability agent. It runs in-cluster, inspects pods and logs, can report or remediate issues based on mode, and exposes a dashboard backed by persistent run/report storage.
 
 ## What it does
 
@@ -51,7 +51,13 @@ Common:
 - `TARGET_NAMESPACES` (comma-separated)
 - `SRE_ALERT_CHANNEL` (enables scheduled scans)
 - `SCAN_INTERVAL_SECONDS`
-- `SQLITE_PATH` (default `/data/lucas.db`)
+- `SQLITE_PATH` (legacy path used before the Postgres migration)
+- `POSTGRES_HOST`
+- `POSTGRES_PORT`
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `POSTGRES_SSLMODE`
 - `PROMPT_FILE` (default `/app/master-prompt-interactive.md`)
 - OpenAI-compatible interactive mode is reduced-capability; it does not match Claude tool/resume behavior.
 
@@ -84,13 +90,23 @@ If `LLM_BACKEND=openai-compatible`:
 Optional:
 
 - `SLACK_WEBHOOK_URL` (Slack notifications)
-- `SQLITE_PATH` (default `/data/lucas.db`)
+- `SQLITE_PATH` (legacy path used before the Postgres migration)
+- `POSTGRES_HOST`
+- `POSTGRES_PORT`
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `POSTGRES_SSLMODE`
 
 ### Dashboard
 
-- `SQLITE_PATH` (default `/data/lucas.db`)
+- `POSTGRES_HOST`
+- `POSTGRES_PORT`
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `POSTGRES_SSLMODE`
 - `PORT` (default `8080`)
-- `LOG_PATH` (default `/data/lucas.log`)
 - `AUTH_USER` (default `a2wmin`)
 - `AUTH_PASS` (default `a2wssword`)
 
@@ -123,7 +139,7 @@ Open `http://localhost:8080`.
 
 ## CronJob mode
 
-Use `k8s/cronjob.yaml`. It runs a batch scan on a schedule and writes to SQLite. It can notify Slack via webhook.
+Use `k8s/cronjob.yaml`. It runs a batch scan on a schedule and writes to the configured runtime store. It can notify Slack via webhook.
 
 ## Slack commands
 
@@ -136,9 +152,16 @@ Use `k8s/cronjob.yaml`. It runs a batch scan on a schedule and writes to SQLite.
 
 The dashboard shows recent runs, sessions, costs, and runbooks. Configure login with `AUTH_USER` and `AUTH_PASS`.
 
+During the Postgres migration, the intended end state is:
+
+- dashboard reads report state from Postgres
+- dashboard no longer depends on the shared SQLite report DB file
+- dashboard live log file viewing is removed or reduced in favor of persisted run log content
+
 ## Notes
 
 - The helper script at `scripts/install.sh` can generate manifests and sealed secrets.
 - `claude-sessions` PVC is only required for Claude resume support.
+- The Postgres migration is designed to remove the dashboard's dependency on the shared report DB file and the live `/data/lucas.log` viewer path.
 - OpenViking can provide memory or context support in supported environments, but Lucas must not assume OpenViking tools, long-term memory, or Claude-style resume are always available. When that support is absent, Lucas should rely only on the current prompt, explicit context, and live Kubernetes data.
 - Docs live in `docs/` (VitePress).

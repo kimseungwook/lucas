@@ -14,14 +14,21 @@ If `SRE_ALERT_CHANNEL` is empty, scheduled scans are disabled.
 
 ## Storage and data
 
-- SQLite lives at `SQLITE_PATH` (default `/data/lucas.db`).
-- The CronJob and dashboard share the same PVC (`lucas-data`).
-- Slack sessions are stored in SQLite and cleaned after 7 days.
+- Current production/dev runtime still uses SQLite until the Postgres cutover is executed.
+- The target state is Postgres as the single source of truth for runs, fixes, token usage, slack sessions, recovery actions, and run summaries.
+- Shadow validation may temporarily keep `SQLITE_PATH` present while Postgres is validated in parallel.
+
+## Postgres migration direction
+
+- The target storage model is Postgres as the single source of truth for report/runtime state.
+- Agent, cron, and dashboard should all use the same Postgres service.
+- The dashboard should not require the shared `lucas-data` PVC after cutover.
+- The live log viewer should be removed or reduced to persisted run log content in the first Postgres release.
 
 ## Logs
 
 - CronJob runs write to `/data/lucas.log`.
-- The dashboard reads from `LOG_PATH`.
+- The dashboard live file viewer is planned to be removed or reduced during the Postgres cutover so it no longer depends on shared `/data` storage.
 - The agent logs are available via `kubectl logs`.
 
 ## Drift auditor
