@@ -2,6 +2,8 @@
 
 This document summarizes the technical state reached across the major Lucas workstreams so far.
 
+For a human-oriented quick guide, see `docs/manual.md`.
+
 ## Scope
 
 This is not a replacement for the feature-by-feature PRD/TRD documents in `docs/specs/`.
@@ -11,6 +13,11 @@ It exists to answer a different question:
 - how the current platform is wired together
 - which hardening tracks are now part of the running system
 - what is still intentionally left for the next stage
+
+Also note:
+
+- `docs/manual.md` is a human quick guide, not the implementation source of truth.
+- design and implementation changes should still follow the detailed documents under `docs/specs/` and `docs/ops/`.
 
 ## Current technical baseline
 
