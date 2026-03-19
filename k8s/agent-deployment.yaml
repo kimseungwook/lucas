@@ -16,29 +16,20 @@ spec:
         app: a2w-lucas-agent
     spec:
       serviceAccountName: a2w-lucas
-      # Uncomment if using private registry:
-      # imagePullSecrets:
-      #   - name: regcred
+      imagePullSecrets:
+        - name: harbor-creds
       initContainers:
         - name: fix-permissions
           image: busybox
-          command: ["sh", "-c", "chmod -R 777 /data && mkdir -p /claude-sessions && chmod -R 777 /claude-sessions"]
+          command: ["sh", "-c", "chmod -R 777 /data"]
           volumeMounts:
             - name: data
               mountPath: /data
-            - name: claude-sessions
-              mountPath: /claude-sessions
           securityContext:
             runAsUser: 0
-        - name: copy-skills
-          image: ghcr.io/a2wio/lucas-agent:latest
-          command: ["sh", "-c", "cp -r /home/claude/.claude/skills /claude-sessions/ 2>/dev/null || true"]
-          volumeMounts:
-            - name: claude-sessions
-              mountPath: /claude-sessions
       containers:
         - name: agent
-          image: ghcr.io/a2wio/lucas-agent:latest
+          image: gdhb.goyoai.com/lukas/lucas-agent:postgres-shadow
           imagePullPolicy: Always
           env:
             # Namespace(s) to monitor - comma-separated for multiple
@@ -48,17 +39,15 @@ spec:
               value: "default"
             # SRE_MODE: "autonomous" (can make changes) or "watcher" (read-only)
             - name: SRE_MODE
-              value: "autonomous"
+              value: "watcher"
             - name: LLM_BACKEND
               value: "openai-compatible"
             - name: LLM_PROVIDER
-              value: "gemini"
-            - name: CLAUDE_MODEL
-              value: "sonnet"
+              value: "openrouter"
             - name: LLM_MODEL
-              value: "gemini-2.5-flash"
+              value: "stepfun/step-3.5-flash:free"
             - name: LLM_BASE_URL
-              value: "https://generativelanguage.googleapis.com/v1beta/openai"
+              value: "https://openrouter.ai/api/v1"
             # Database path (shared with dashboard)
             - name: SQLITE_PATH
               value: "/data/lucas.db"
@@ -90,18 +79,19 @@ spec:
               value: "false"
             - name: HOME
               value: "/home/claude"
+            - name: SCAN_INTERVAL_SECONDS
+              value: "3600"
             - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: llm-auth
                   key: api-key
                   optional: true
-            - name: ANTHROPIC_API_KEY
+            - name: OPENROUTER_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: claude-auth
-                  key: api-key
-                  optional: true
+                  name: llm-auth-openrouter
+                  key: OPENROUTER_API_KEY
             # Slack Bot credentials (required for interactive mode)
             - name: SLACK_BOT_TOKEN
               valueFrom:
@@ -120,25 +110,20 @@ spec:
                   name: slack-bot
                   key: alert-channel
                   optional: true
-            # Scan interval in seconds
-            - name: SCAN_INTERVAL_SECONDS
-              value: "3600"
             - name: SLACK_EMERGENCY_ACTIONS_ENABLED
-              value: "false"
+              value: "true"
             - name: SLACK_ACTION_ALLOWED_CHANNELS
-              value: ""
+              value: "C0AKTLTBP4M"
             - name: SLACK_ACTION_ALLOWED_USERS
               value: ""
             - name: SLACK_ACTION_ALLOWED_NAMESPACES
               value: ""
             # Prompt file
             - name: PROMPT_FILE
-              value: "/app/master-prompt-interactive.md"
+              value: "/app/master-prompt-interactive-report.md"
           volumeMounts:
             - name: data
               mountPath: /data
-            - name: claude-sessions
-              mountPath: /home/claude/.claude
           resources:
             requests:
               memory: "256Mi"
@@ -158,6 +143,3 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: lucas-data
-        - name: claude-sessions
-          persistentVolumeClaim:
-            claimName: claude-sessions

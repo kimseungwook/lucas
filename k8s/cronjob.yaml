@@ -4,7 +4,7 @@ metadata:
   name: a2w-lucas
   namespace: a2w-lucas
 spec:
-  schedule: "*/5 * * * *"  # Every 5 minutes
+  schedule: "*/10 * * * *"
   concurrencyPolicy: Forbid  # Don't run if previous job still running
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -16,9 +16,8 @@ spec:
         spec:
           serviceAccountName: a2w-lucas
           restartPolicy: Never
-          # Uncomment if using private registry:
-          # imagePullSecrets:
-          #   - name: regcred
+          imagePullSecrets:
+            - name: harbor-creds
           initContainers:
             - name: fix-permissions
               image: busybox
@@ -30,13 +29,15 @@ spec:
                 runAsUser: 0
           containers:
             - name: lucas
-              image: ghcr.io/a2wio/lucas:latest
+              image: gdhb.goyoai.com/lukas/lucas:postgres-shadow
               imagePullPolicy: Always
               env:
                 - name: TARGET_NAMESPACE
-                  value: "default"  # Namespace to monitor
+                  value: "default"
+                - name: TARGET_NAMESPACES
+                  value: "all"
                 - name: SRE_MODE
-                  value: "autonomous"  # "autonomous" (fix issues) or "report" (report only)
+                  value: "report"
                 - name: SQLITE_PATH
                   value: "/data/lucas.db"
                 - name: POSTGRES_HOST
@@ -65,35 +66,25 @@ spec:
                   value: "disable"
                 - name: POSTGRES_SHADOW_VALIDATE
                   value: "false"
-                - name: HOME
-                  value: "/home/claude"
                 - name: LLM_BACKEND
                   value: "openai-compatible"
                 - name: LLM_PROVIDER
-                  value: "gemini"
+                  value: "openrouter"
                 - name: LLM_MODEL
-                  value: "gemini-2.5-flash"
+                  value: "stepfun/step-3.5-flash:free"
                 - name: LLM_BASE_URL
-                  value: "https://generativelanguage.googleapis.com/v1beta/openai"
-                # AUTH_MODE: "api-key" (default) or "credentials"
-                - name: AUTH_MODE
-                  value: "api-key"
+                  value: "https://openrouter.ai/api/v1"
                 - name: LLM_API_KEY
                   valueFrom:
                     secretKeyRef:
                       name: llm-auth
                       key: api-key
                       optional: true
-                # Option 1: API Key auth (AUTH_MODE=api-key)
-                - name: ANTHROPIC_API_KEY
+                - name: OPENROUTER_API_KEY
                   valueFrom:
                     secretKeyRef:
-                      name: claude-auth
-                      key: api-key
-                      optional: true
-                # Option 2: Credentials auth (AUTH_MODE=credentials)
-                # Mount credentials.json via volumeMounts below
-                # Slack notifications (optional)
+                      name: llm-auth-openrouter
+                      key: OPENROUTER_API_KEY
                 - name: SLACK_WEBHOOK_URL
                   valueFrom:
                     secretKeyRef:
@@ -103,10 +94,6 @@ spec:
               volumeMounts:
                 - name: data
                   mountPath: /data
-                # Uncomment for AUTH_MODE=credentials:
-                # - name: claude-credentials
-                #   mountPath: /secrets
-                #   readOnly: true
               resources:
                 requests:
                   memory: "256Mi"
@@ -118,7 +105,3 @@ spec:
             - name: data
               persistentVolumeClaim:
                 claimName: lucas-data
-            # Uncomment for AUTH_MODE=credentials:
-            # - name: claude-credentials
-            #   secret:
-            #     secretName: claude-credentials
