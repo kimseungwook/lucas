@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -72,7 +73,8 @@ type CostStats struct {
 }
 
 type DB struct {
-	conn *sql.DB
+	conn    *sql.DB
+	dialect string
 }
 
 func New(path string) (*DB, error) {
@@ -162,7 +164,25 @@ func New(path string) (*DB, error) {
 		return nil, err
 	}
 
-	return &DB{conn: conn}, nil
+	return &DB{conn: conn, dialect: "sqlite"}, nil
+}
+
+func (db *DB) isPostgres() bool {
+	return db.dialect == "postgres"
+}
+
+func (db *DB) arg(n int) string {
+	if db.isPostgres() {
+		return fmt.Sprintf("$%d", n)
+	}
+	return "?"
+}
+
+func (db *DB) tsExpr(column string) string {
+	if db.isPostgres() {
+		return fmt.Sprintf("COALESCE(TO_CHAR(%s, 'YYYY-MM-DD HH24:MI:SS'), '')", column)
+	}
+	return fmt.Sprintf("COALESCE(%s, '')", column)
 }
 
 func (db *DB) Close() error {
@@ -172,6 +192,15 @@ func (db *DB) Close() error {
 // Run operations
 
 func (db *DB) CreateRun(namespace, mode string) (int64, error) {
+	if db.isPostgres() {
+		var id int64
+		err := db.conn.QueryRow(
+			fmt.Sprintf("INSERT INTO runs (started_at, namespace, mode, status) VALUES (NOW(), %s, %s, 'running') RETURNING id", db.arg(1), db.arg(2)),
+			namespace,
+			mode,
+		).Scan(&id)
+		return id, err
+	}
 	result, err := db.conn.Exec(`
 		INSERT INTO runs (started_at, namespace, mode, status)
 		VALUES (datetime('now'), ?, ?, 'running')
@@ -183,6 +212,23 @@ func (db *DB) CreateRun(namespace, mode string) (int64, error) {
 }
 
 func (db *DB) CompleteRun(id int64, status string, podCount, errorCount, fixCount int, report, log string) error {
+	if db.isPostgres() {
+		_, err := db.conn.Exec(
+			fmt.Sprintf(`
+				UPDATE runs SET
+					ended_at = NOW(),
+					status = %s,
+					pod_count = %s,
+					error_count = %s,
+					fix_count = %s,
+					report = %s,
+					log = %s
+				WHERE id = %s
+			`, db.arg(1), db.arg(2), db.arg(3), db.arg(4), db.arg(5), db.arg(6), db.arg(7)),
+			status, podCount, errorCount, fixCount, report, log, id,
+		)
+		return err
+	}
 	_, err := db.conn.Exec(`
 		UPDATE runs SET
 			ended_at = datetime('now'),
@@ -202,32 +248,40 @@ func (db *DB) GetRuns(namespace string, limit int) ([]Run, error) {
 	args := []interface{}{}
 
 	if namespace == "" || namespace == "all" {
+		emptyText := "''"
+		limitArg := db.arg(1)
+		where := ""
+		if namespace == "all" {
+			where = " WHERE namespace = 'all'"
+		}
 		query = `
-			SELECT id, 0 as parent_run_id, 0 as summary_only, '' as summary_text,
-			       started_at, COALESCE(ended_at, ''), namespace, mode, status,
+			SELECT id, 0 as parent_run_id, false as summary_only, ` + emptyText + ` as summary_text,
+			       ` + db.tsExpr("started_at") + ` as started_at, ` + db.tsExpr("ended_at") + ` as ended_at, namespace, mode, status,
 			       pod_count, error_count, fix_count, COALESCE(report, ''), COALESCE(log, '')
 			FROM runs
 		`
-		if namespace == "all" {
-			query += " WHERE namespace = 'all'"
-		}
-		query += " ORDER BY started_at DESC LIMIT ?"
+		query += where + " ORDER BY started_at DESC LIMIT " + limitArg
 		args = append(args, limit)
 	} else {
+		summaryOnly := "true"
+		emptyText := "''"
+		arg1 := db.arg(1)
+		arg2 := db.arg(2)
+		arg3 := db.arg(3)
 		query = `
 			SELECT * FROM (
-				SELECT id, 0 as parent_run_id, 0 as summary_only, '' as summary_text,
-				       started_at, COALESCE(ended_at, ''), namespace, mode, status,
+				SELECT id, 0 as parent_run_id, false as summary_only, ` + emptyText + ` as summary_text,
+				       ` + db.tsExpr("started_at") + ` as started_at, ` + db.tsExpr("ended_at") + ` as ended_at, namespace, mode, status,
 				       pod_count, error_count, fix_count, COALESCE(report, ''), COALESCE(log, '')
 				FROM runs
-				WHERE namespace = ?
+				WHERE namespace = ` + arg1 + `
 				UNION ALL
-				SELECT -id as id, parent_run_id, 1 as summary_only, COALESCE(summary, '') as summary_text,
-				       started_at, COALESCE(ended_at, ''), namespace, mode, status,
+				SELECT -id as id, parent_run_id, ` + summaryOnly + ` as summary_only, COALESCE(summary, '') as summary_text,
+				       ` + db.tsExpr("started_at") + ` as started_at, ` + db.tsExpr("ended_at") + ` as ended_at, namespace, mode, status,
 				       pod_count, error_count, fix_count, '' as report, '' as log
 				FROM run_summaries
-				WHERE namespace = ?
-			) ORDER BY started_at DESC LIMIT ?
+				WHERE namespace = ` + arg2 + `
+			) AS namespace_runs ORDER BY started_at DESC LIMIT ` + arg3 + `
 		`
 		args = append(args, namespace, namespace, limit)
 	}
@@ -254,12 +308,13 @@ func (db *DB) GetRuns(namespace string, limit int) ([]Run, error) {
 func (db *DB) GetRun(id int) (*Run, error) {
 	var r Run
 	if id >= 0 {
-		err := db.conn.QueryRow(`
-			SELECT id, 0 as parent_run_id, 0 as summary_only, '' as summary_text,
-			       started_at, COALESCE(ended_at, ''), namespace, mode, status,
+		query := fmt.Sprintf(`
+			SELECT id, 0 as parent_run_id, false as summary_only, '' as summary_text,
+			       %s as started_at, %s as ended_at, namespace, mode, status,
 			       pod_count, error_count, fix_count, COALESCE(report, ''), COALESCE(log, '')
-			FROM runs WHERE id = ?
-		`, id).Scan(&r.ID, &r.ParentRunID, &r.SummaryOnly, &r.SummaryText, &r.StartedAt, &r.EndedAt, &r.Namespace, &r.Mode,
+			FROM runs WHERE id = %s
+		`, db.tsExpr("started_at"), db.tsExpr("ended_at"), db.arg(1))
+		err := db.conn.QueryRow(query, id).Scan(&r.ID, &r.ParentRunID, &r.SummaryOnly, &r.SummaryText, &r.StartedAt, &r.EndedAt, &r.Namespace, &r.Mode,
 			&r.Status, &r.PodCount, &r.ErrorCount, &r.FixCount, &r.Report, &r.Log)
 		if err != nil {
 			return nil, err
@@ -267,12 +322,13 @@ func (db *DB) GetRun(id int) (*Run, error) {
 		return &r, nil
 	}
 
-	err := db.conn.QueryRow(`
-		SELECT -id as id, parent_run_id, 1 as summary_only, COALESCE(summary, '') as summary_text,
-		       started_at, COALESCE(ended_at, ''), namespace, mode, status,
+	query := fmt.Sprintf(`
+		SELECT -id as id, parent_run_id, true as summary_only, COALESCE(summary, '') as summary_text,
+		       %s as started_at, %s as ended_at, namespace, mode, status,
 		       pod_count, error_count, fix_count, '' as report, '' as log
-		FROM run_summaries WHERE id = ?
-	`, -id).Scan(&r.ID, &r.ParentRunID, &r.SummaryOnly, &r.SummaryText, &r.StartedAt, &r.EndedAt, &r.Namespace, &r.Mode,
+		FROM run_summaries WHERE id = %s
+	`, db.tsExpr("started_at"), db.tsExpr("ended_at"), db.arg(1))
+	err := db.conn.QueryRow(query, -id).Scan(&r.ID, &r.ParentRunID, &r.SummaryOnly, &r.SummaryText, &r.StartedAt, &r.EndedAt, &r.Namespace, &r.Mode,
 		&r.Status, &r.PodCount, &r.ErrorCount, &r.FixCount, &r.Report, &r.Log)
 	if err != nil {
 		return nil, err
@@ -282,9 +338,10 @@ func (db *DB) GetRun(id int) (*Run, error) {
 
 func (db *DB) GetLastRunTime(namespace string) (string, error) {
 	var lastRun string
-	err := db.conn.QueryRow(`
-		SELECT COALESCE(MAX(ended_at), '') FROM runs WHERE namespace = ? AND status != 'running'
-	`, namespace).Scan(&lastRun)
+	query := fmt.Sprintf(`
+		SELECT COALESCE(MAX(ended_at)::text, '') FROM runs WHERE namespace = %s AND status != 'running'
+	`, db.arg(1))
+	err := db.conn.QueryRow(query, namespace).Scan(&lastRun)
 	return lastRun, err
 }
 
@@ -302,7 +359,7 @@ func (db *DB) GetNamespaces() ([]NamespaceStats, error) {
 			SELECT namespace, status FROM runs WHERE namespace != 'all'
 			UNION ALL
 			SELECT namespace, status FROM run_summaries
-		)
+		) AS namespace_rows
 		GROUP BY namespace
 		ORDER BY namespace
 	`)
@@ -327,33 +384,32 @@ func (db *DB) GetNamespaceStats(namespace string) (*NamespaceStats, error) {
 	var s NamespaceStats
 	s.Namespace = namespace
 
-	err := db.conn.QueryRow(`SELECT COUNT(*) FROM runs WHERE namespace = ?`, namespace).Scan(&s.RunCount)
-	err = db.conn.QueryRow(`SELECT COUNT(*) FROM (
-		SELECT namespace FROM runs WHERE namespace = ?
+	err := db.conn.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM (
+		SELECT namespace FROM runs WHERE namespace = %s
 		UNION ALL
-		SELECT namespace FROM run_summaries WHERE namespace = ?
-	)`, namespace, namespace).Scan(&s.RunCount)
+		SELECT namespace FROM run_summaries WHERE namespace = %s
+	) AS namespace_rows`, db.arg(1), db.arg(2)), namespace, namespace).Scan(&s.RunCount)
 	if err != nil {
 		return nil, err
 	}
 	// Count 'ok' status as ok
-	db.conn.QueryRow(`SELECT COUNT(*) FROM (
-		SELECT status FROM runs WHERE namespace = ?
+	db.conn.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM (
+		SELECT status FROM runs WHERE namespace = %s
 		UNION ALL
-		SELECT status FROM run_summaries WHERE namespace = ?
-	) WHERE status = 'ok'`, namespace, namespace).Scan(&s.OkCount)
+		SELECT status FROM run_summaries WHERE namespace = %s
+	) AS namespace_rows WHERE status = 'ok'`, db.arg(1), db.arg(2)), namespace, namespace).Scan(&s.OkCount)
 	// Count 'fixed' status as fixed
-	db.conn.QueryRow(`SELECT COUNT(*) FROM (
-		SELECT status FROM runs WHERE namespace = ?
+	db.conn.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM (
+		SELECT status FROM runs WHERE namespace = %s
 		UNION ALL
-		SELECT status FROM run_summaries WHERE namespace = ?
-	) WHERE status = 'fixed'`, namespace, namespace).Scan(&s.FixedCount)
+		SELECT status FROM run_summaries WHERE namespace = %s
+	) AS namespace_rows WHERE status = 'fixed'`, db.arg(1), db.arg(2)), namespace, namespace).Scan(&s.FixedCount)
 	// Count 'failed' and 'issues_found' as failed (issues that need attention)
-	db.conn.QueryRow(`SELECT COUNT(*) FROM (
-		SELECT status FROM runs WHERE namespace = ?
+	db.conn.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM (
+		SELECT status FROM runs WHERE namespace = %s
 		UNION ALL
-		SELECT status FROM run_summaries WHERE namespace = ?
-	) WHERE status = 'failed' OR status = 'issues_found'`, namespace, namespace).Scan(&s.FailedCount)
+		SELECT status FROM run_summaries WHERE namespace = %s
+	) AS namespace_rows WHERE status = 'failed' OR status = 'issues_found'`, db.arg(1), db.arg(2)), namespace, namespace).Scan(&s.FailedCount)
 
 	return &s, nil
 }
@@ -361,13 +417,13 @@ func (db *DB) GetNamespaceStats(namespace string) (*NamespaceStats, error) {
 // Fix operations
 
 func (db *DB) GetFixes(limit int) ([]Fix, error) {
-	rows, err := db.conn.Query(`
-		SELECT id, COALESCE(run_id, 0), timestamp, namespace, pod_name, error_type,
+	rows, err := db.conn.Query(fmt.Sprintf(`
+		SELECT id, COALESCE(run_id, 0), %s as timestamp, namespace, pod_name, error_type,
 		       COALESCE(error_message, ''), COALESCE(fix_applied, ''), status
 		FROM fixes
 		ORDER BY timestamp DESC
-		LIMIT ?
-	`, limit)
+		LIMIT %s
+	`, db.tsExpr("timestamp"), db.arg(1)), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -387,13 +443,13 @@ func (db *DB) GetFixes(limit int) ([]Fix, error) {
 }
 
 func (db *DB) GetFixesByRun(runID int) ([]Fix, error) {
-	rows, err := db.conn.Query(`
-		SELECT id, COALESCE(run_id, 0), timestamp, namespace, pod_name, error_type,
+	rows, err := db.conn.Query(fmt.Sprintf(`
+		SELECT id, COALESCE(run_id, 0), %s as timestamp, namespace, pod_name, error_type,
 		       COALESCE(error_message, ''), COALESCE(fix_applied, ''), status
 		FROM fixes
-		WHERE run_id = ?
+		WHERE run_id = %s
 		ORDER BY timestamp DESC
-	`, runID)
+	`, db.tsExpr("timestamp"), db.arg(1)), runID)
 	if err != nil {
 		return nil, err
 	}
@@ -432,11 +488,11 @@ func (db *DB) GetStats() (total, success, failed, pending int, err error) {
 // Session operations
 
 func (db *DB) GetSessions() ([]Session, error) {
-	rows, err := db.conn.Query(`
-		SELECT thread_ts, session_id, channel, COALESCE(namespace, ''), created_at, updated_at
+	rows, err := db.conn.Query(fmt.Sprintf(`
+		SELECT thread_ts, session_id, channel, COALESCE(namespace, ''), %s as created_at, %s as updated_at
 		FROM slack_sessions
 		ORDER BY updated_at DESC
-	`)
+	`, db.tsExpr("created_at"), db.tsExpr("updated_at")))
 	if err != nil {
 		return nil, err
 	}
@@ -461,19 +517,19 @@ func (db *DB) GetSessionCount() (int, error) {
 }
 
 func (db *DB) DeleteSession(sessionID string) error {
-	_, err := db.conn.Exec("DELETE FROM slack_sessions WHERE session_id = ?", sessionID)
+	_, err := db.conn.Exec(fmt.Sprintf("DELETE FROM slack_sessions WHERE session_id = %s", db.arg(1)), sessionID)
 	return err
 }
 
 // Token usage operations
 
 func (db *DB) GetTokenUsage(limit int) ([]TokenUsage, error) {
-	rows, err := db.conn.Query(`
-		SELECT id, COALESCE(run_id, 0), namespace, model, input_tokens, output_tokens, total_tokens, cost, created_at
+	rows, err := db.conn.Query(fmt.Sprintf(`
+		SELECT id, COALESCE(run_id, 0), namespace, model, input_tokens, output_tokens, total_tokens, cost, %s as created_at
 		FROM token_usage
 		ORDER BY created_at DESC
-		LIMIT ?
-	`, limit)
+		LIMIT %s
+	`, db.tsExpr("created_at"), db.arg(1)), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -508,9 +564,15 @@ func (db *DB) GetCostStats() (*CostStats, error) {
 }
 
 func (db *DB) RecordTokenUsage(runID int, namespace, model string, inputTokens, outputTokens int, cost float64) error {
-	_, err := db.conn.Exec(`
+	query := `
 		INSERT INTO token_usage (run_id, namespace, model, input_tokens, output_tokens, total_tokens, cost, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-	`, runID, namespace, model, inputTokens, outputTokens, inputTokens+outputTokens, cost)
+		VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+	`
+	createdAt := "datetime('now')"
+	if db.isPostgres() {
+		createdAt = "NOW()"
+	}
+	query = fmt.Sprintf(query, db.arg(1), db.arg(2), db.arg(3), db.arg(4), db.arg(5), db.arg(6), db.arg(7), createdAt)
+	_, err := db.conn.Exec(query, runID, namespace, model, inputTokens, outputTokens, inputTokens+outputTokens, cost)
 	return err
 }

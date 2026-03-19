@@ -4,24 +4,20 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
-	"os"
 	"strconv"
-	"strings"
 
 	"github.com/a2wio/lucas/dashboard/db"
 )
 
 type Handler struct {
-	db      *db.DB
-	tmpl    *template.Template
-	logPath string
+	db   *db.DB
+	tmpl *template.Template
 }
 
-func New(database *db.DB, tmpl *template.Template, logPath string) *Handler {
+func New(database *db.DB, tmpl *template.Template) *Handler {
 	return &Handler{
-		db:      database,
-		tmpl:    tmpl,
-		logPath: logPath,
+		db:   database,
+		tmpl: tmpl,
 	}
 }
 
@@ -33,7 +29,6 @@ type PageData struct {
 	SelectedRun   *db.Run
 	SelectedFixes []db.Fix
 	Stats         *db.NamespaceStats
-	Log           string
 	Sessions      []db.Session
 	TokenUsage    []db.TokenUsage
 	CostStats     *db.CostStats
@@ -45,18 +40,6 @@ type Runbook struct {
 	Filename    string
 	Description string
 	Triggers    []string
-}
-
-func (h *Handler) readLog() string {
-	data, err := os.ReadFile(h.logPath)
-	if err != nil {
-		return "No lucas log available yet. Waiting for first run..."
-	}
-	lines := strings.Split(string(data), "\n")
-	if len(lines) > 200 {
-		lines = lines[len(lines)-200:]
-	}
-	return strings.Join(lines, "\n")
 }
 
 // Main page - Overview
@@ -103,7 +86,6 @@ func (h *Handler) Index(w http.ResponseWriter, r *http.Request) {
 		SelectedRun:   selectedRun,
 		SelectedFixes: selectedFixes,
 		Stats:         stats,
-		Log:           h.readLog(),
 	}
 
 	err := h.tmpl.ExecuteTemplate(w, "index.html", data)
@@ -243,14 +225,6 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 	namespace := r.URL.Query().Get("ns")
 	stats, _ := h.db.GetNamespaceStats(namespace)
 	h.tmpl.ExecuteTemplate(w, "stats.html", stats)
-}
-
-func (h *Handler) LiveLog(w http.ResponseWriter, r *http.Request) {
-	log := h.readLog()
-	w.Header().Set("Content-Type", "text/html")
-	escaped := template.HTMLEscapeString(log)
-	escaped = strings.ReplaceAll(escaped, "\n", "<br>")
-	w.Write([]byte(escaped))
 }
 
 // API endpoints (JSON)

@@ -62,6 +62,32 @@ spec:
             # Database path (shared with dashboard)
             - name: SQLITE_PATH
               value: "/data/lucas.db"
+            - name: POSTGRES_HOST
+              value: "lucas-postgres"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: database
+                  optional: true
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: username
+                  optional: true
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: password
+                  optional: true
+            - name: POSTGRES_SSLMODE
+              value: "disable"
+            - name: POSTGRES_SHADOW_VALIDATE
+              value: "false"
             - name: HOME
               value: "/home/claude"
             - name: LLM_API_KEY

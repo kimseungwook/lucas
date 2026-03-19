@@ -27,26 +27,6 @@
             </div>
         </div>
         {{end}}
-
-        <!-- Live Log (collapsible) -->
-        <div class="border-t border-neutral-300">
-            <button onclick="toggleLog()" class="w-full px-4 py-2 flex items-center justify-between text-sm text-neutral-600 hover:bg-neutral-200 transition-colors">
-                <span class="flex items-center gap-2">
-                    <i class="fa-solid fa-terminal text-neutral-400"></i>
-                    Live Terminal
-                </span>
-                <i id="log-chevron" class="fa-solid fa-chevron-up text-neutral-400 transition-transform"></i>
-            </button>
-            <div id="log-panel" class="hidden bg-neutral-900 border-t border-neutral-300">
-                <div id="live-log"
-                     class="h-48 p-3 font-mono text-xs text-neutral-400 overflow-y-auto scrollbar-thin"
-                     hx-get="/partials/log"
-                     hx-trigger="every 3s"
-                     hx-swap="innerHTML">
-                    {{.Log}}
-                </div>
-            </div>
-        </div>
     </div>
 </div>
 {{end}}
