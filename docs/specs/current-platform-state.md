@@ -119,7 +119,8 @@ Primary references:
 - The Postgres migration is the largest current storage change.
 - The target state is Postgres as the runtime system of record for Lucas report/session state.
 - The dashboard has been decoupled from the older shared SQLite report path.
-- Development cutover has already been validated by showing that new scheduled runs increase Postgres counts while SQLite no longer increases for that path.
+- Development cutover has been validated by showing that new scheduled runs increase Postgres counts while SQLite no longer increases for that path.
+- Production cutover has also been executed, bringing production onto the same direct Postgres write model for new runs.
 
 Primary references:
 
@@ -168,14 +169,14 @@ Primary references:
 
 ### Production
 
-- Production cutover is still a separate step
-- The technical design and checklist now exist, but production execution should be treated as its own controlled rollout
+- Production now runs the dedicated Harbor dashboard image and direct Postgres-backed agent/cron runtime for new runs
+- Production still retains some cleanup debt in templates/scripts, but the live storage/runtime cutover has been completed
 
 ## What is still intentionally not finished
 
-- Production Postgres cutover is not described here as completed work
 - All cluster/runtime secret values are intentionally excluded from docs and must stay out of Git
 - The existing feature-level specs remain the source of truth for detailed acceptance criteria and deep design decisions
+- Some repo templates and generation paths may still need cleanup as the final source-of-truth follows the now-completed production runtime
 
 ## How to use this document
 

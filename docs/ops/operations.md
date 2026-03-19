@@ -14,9 +14,9 @@ If `SRE_ALERT_CHANNEL` is empty, scheduled scans are disabled.
 
 ## Storage and data
 
-- Current production/dev runtime still uses SQLite until the Postgres cutover is executed.
+- Development and production now both use Postgres as the primary runtime store for new runs.
 - The target state is Postgres as the single source of truth for runs, fixes, token usage, slack sessions, recovery actions, and run summaries.
-- Shadow validation may temporarily keep `SQLITE_PATH` present while Postgres is validated in parallel.
+- `SQLITE_PATH` may still remain present as a compatibility path during transition cleanup, but it is no longer the intended primary runtime store.
 
 ## Postgres migration direction
 
@@ -35,6 +35,7 @@ If `SRE_ALERT_CHANNEL` is empty, scheduled scans are disabled.
 
 ## Postgres cutover checklist
 
+- This checklist has now been executed for both dev and prod and remains here as the rollback/audit reference for future re-runs.
 - Confirm `lucas-postgres` is healthy and the `lucas-postgres-auth` secret contains `username`, `password`, and `database`.
 - Confirm the dedicated dashboard image is built and pushed before rollout.
 - Confirm the dashboard is healthy without the shared `lucas-data` PVC and that `/health` responds on the dashboard service.
