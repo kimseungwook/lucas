@@ -25,6 +25,31 @@ If `SRE_ALERT_CHANNEL` is empty, scheduled scans are disabled.
 - The dashboard should not require the shared `lucas-data` PVC after cutover.
 - The live log viewer should be removed or reduced to persisted run log content in the first Postgres release.
 
+## Dashboard image deployment
+
+- The dashboard deployment should use a dedicated image instead of building the binary inside the pod.
+- The current deployment target is `gdhb.goyoai.com/lukas/lucas-dashboard:postgres` with the `harbor-creds` pull secret.
+- The dashboard no longer mounts the shared `lucas-data` PVC.
+- The dashboard no longer relies on the old live log file path as its primary data path.
+- This deployment path exists because the older runtime hit both a `ReadWriteOnce` PVC attach conflict and `ghcr.io/a2wio/lucas-dashboard:latest` image pull failures.
+
+## Postgres cutover checklist
+
+- Confirm `lucas-postgres` is healthy and the `lucas-postgres-auth` secret contains `username`, `password`, and `database`.
+- Confirm the dedicated dashboard image is built and pushed before rollout.
+- Confirm the dashboard is healthy without the shared `lucas-data` PVC and that `/health` responds on the dashboard service.
+- Confirm recent scheduled runs are being written to Postgres and match the expected namespace/status values.
+- Confirm the agent and cron manifests both point at `lucas-postgres` with the intended `POSTGRES_*` env values.
+- If shadow validation is still enabled in the live cluster, disable `POSTGRES_SHADOW_VALIDATE` for the cutover rollout and restart the workloads in this order: dashboard, agent, cron.
+- After the restart, confirm new runs continue to appear in Postgres and that the dashboard reads current data without falling back to shared SQLite state.
+- Keep the previous manifest revision available until at least one full scheduled scan cycle completes cleanly after cutover.
+- If cutover fails, roll back the workload manifests to the previous revision and restore the prior runtime path before retrying.
+
+Reference:
+
+- `README.md`
+- `docs/specs/index.md`
+
 ## Logs
 
 - CronJob runs write to `/data/lucas.log`.

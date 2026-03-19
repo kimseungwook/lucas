@@ -158,6 +158,8 @@ During the Postgres migration, the intended end state is:
 - dashboard no longer depends on the shared SQLite report DB file
 - dashboard live log file viewing is removed or reduced in favor of persisted run log content
 
+For the current dashboard image deployment and the Postgres cutover checklist, see `docs/ops/operations.md`.
+
 ## Notes
 
 - The helper script at `scripts/install.sh` can generate manifests and sealed secrets.
