@@ -9,6 +9,9 @@ hero:
     alt: A2W logo
   actions:
     - theme: brand
+      text: Manual
+      link: /manual
+    - theme: alt
       text: Getting Started
       link: /guide/getting-started
     - theme: alt
@@ -42,6 +45,7 @@ Planning and implementation specs for larger changes live in `docs/specs/`.
 
 ## Current Operational References
 
+- Human quick manual: `/manual`
 - Current platform technical state: `/specs/current-platform-state`
 - Current runtime settings: `/ops/current-runtime-settings`
 

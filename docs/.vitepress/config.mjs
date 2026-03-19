@@ -14,6 +14,7 @@ export default defineConfig({
     },
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'Manual', link: '/manual' },
       { text: 'Current State', link: '/specs/current-platform-state' },
       { text: 'Runtime Settings', link: '/ops/current-runtime-settings' },
       { text: 'Ops', link: '/ops/deployment' },
@@ -28,6 +29,7 @@ export default defineConfig({
           text: 'Introduction',
           collapsed: false,
           items: [
+            { text: 'Manual', link: '/manual' },
             { text: 'Getting Started', link: '/guide/getting-started' },
             { text: 'Architecture', link: '/guide/architecture' }
           ]
