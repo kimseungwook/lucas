@@ -12,8 +12,13 @@ podman push your-registry/lucas-agent:tag
 ## Dashboard
 
 ```bash
-podman build --platform=linux/amd64 -f Dockerfile.dashboard -t your-registry/lucas-dashboard:tag .
-podman push your-registry/lucas-dashboard:tag
+docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.dashboard -t your-registry/lucas-dashboard:tag --push .
+```
+
+Current Harbor example:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.dashboard -t gdhb.goyoai.com/lukas/lucas-dashboard:postgres --push .
 ```
 
 ## Agent (CronJob)
