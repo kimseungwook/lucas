@@ -9,11 +9,29 @@ dotenv_stub = ModuleType("dotenv")
 dotenv_stub.load_dotenv = lambda *args, **kwargs: None
 sys.modules.setdefault("dotenv", dotenv_stub)
 
+import cron_runner
 from cron_runner import _load_last_run_time, build_stored_report_payload
 from report_utils import extract_report_payload, parse_run_report
 
 
 class CronRunnerTests(unittest.TestCase):
+    def test_build_run_store_omits_db_path_for_postgres_store(self):
+        original_run_store = cron_runner.RunStore
+        init_calls = []
+
+        class FakePostgresRunStore:
+            def __init__(self):
+                init_calls.append(())
+
+        try:
+            cron_runner.RunStore = FakePostgresRunStore
+            store = cron_runner._build_run_store("/data/lucas.db")
+        finally:
+            cron_runner.RunStore = original_run_store
+
+        self.assertIsInstance(store, FakePostgresRunStore)
+        self.assertEqual(init_calls, [()])
+
     def test_load_last_run_time_reads_from_shadow_primary_store(self):
         class FakeCursor:
             async def __aenter__(self):

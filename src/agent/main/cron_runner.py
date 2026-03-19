@@ -69,6 +69,15 @@ def load_prompt(prompt_file: str, replacements: dict[str, str]) -> str:
     return prompt
 
 
+def _build_run_store(sqlite_path: str) -> Any:
+    try:
+        return RunStore(db_path=sqlite_path)
+    except TypeError as exc:
+        if "db_path" not in str(exc):
+            raise
+        return RunStore()
+
+
 async def _load_last_run_time(run_store: Any, run_scope: str, run_id: int) -> str:
     read_store = getattr(run_store, "primary", run_store)
     db = getattr(read_store, "_db", None)
@@ -169,7 +178,7 @@ async def main() -> None:
     logger.info("Backend=%s provider=%s model=%s", config.backend, config.provider, config.model)
     logger.info("Target namespaces=%s sqlite=%s", target_namespaces, sqlite_path)
 
-    run_store = RunStore(db_path=sqlite_path)
+    run_store = _build_run_store(sqlite_path)
     await run_store.connect()
 
     run_scope = ",".join(target_namespaces) if len(target_namespaces) <= 5 else "all"
