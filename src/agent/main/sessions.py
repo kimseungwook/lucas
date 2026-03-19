@@ -359,9 +359,22 @@ SQLiteRunStore = RunStore
 SQLiteSessionStore = SessionStore
 
 
+def _load_postgres_store_classes() -> tuple[Any, Any]:
+    if __package__:
+        from .postgres_store import PostgresRunStore as _PostgresRunStore, PostgresSessionStore as _PostgresSessionStore
+    else:
+        postgres_store = importlib.import_module("postgres_store")
+        _PostgresRunStore = postgres_store.PostgresRunStore
+        _PostgresSessionStore = postgres_store.PostgresSessionStore
+    return _PostgresRunStore, _PostgresSessionStore
+
+
 class ShadowRunStore:
     def __init__(self, db_path: str | None = None, primary: Any | None = None, mirror: Any | None = None):
         self.primary = primary or SQLiteRunStore(db_path=db_path)
+        if mirror is None and os.environ.get("POSTGRES_HOST"):
+            _PostgresRunStore, _ = _load_postgres_store_classes()
+            mirror = _PostgresRunStore()
         self.mirror = mirror
         self._run_id_map: dict[int, int] = {}
 
@@ -448,6 +461,9 @@ class ShadowRunStore:
 class ShadowSessionStore:
     def __init__(self, db_path: str | None = None, primary: Any | None = None, mirror: Any | None = None):
         self.primary = primary or SQLiteSessionStore(db_path=db_path)
+        if mirror is None and os.environ.get("POSTGRES_HOST"):
+            _, _PostgresSessionStore = _load_postgres_store_classes()
+            mirror = _PostgresSessionStore()
         self.mirror = mirror
 
     async def connect(self):
@@ -503,12 +519,7 @@ class ShadowSessionStore:
 
 if os.environ.get("POSTGRES_HOST"):
     try:
-        if __package__:
-            from .postgres_store import PostgresRunStore as _PostgresRunStore, PostgresSessionStore as _PostgresSessionStore
-        else:
-            postgres_store = importlib.import_module("postgres_store")
-            _PostgresRunStore = postgres_store.PostgresRunStore
-            _PostgresSessionStore = postgres_store.PostgresSessionStore
+        _PostgresRunStore, _PostgresSessionStore = _load_postgres_store_classes()
 
         if os.environ.get("POSTGRES_SHADOW_VALIDATE", "false").strip().lower() in {"1", "true", "yes", "on"}:
             RunStore = cast(Any, ShadowRunStore)

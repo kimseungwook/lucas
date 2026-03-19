@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sqlite3
 import socket
 import subprocess
 import tempfile
@@ -135,20 +136,23 @@ class PostgresStoreTests(unittest.TestCase):
         self.assertEqual(row["log"], "log")
 
     def test_store_and_read_session_mapping_in_postgres(self):
+        thread_ts = f"postgres-session-{time.time_ns()}"
+
         async def scenario():
             store = PostgresSessionStore()
             await store.connect()
-            await store.save_session("123.45", "sess-1", "C123", namespace="default")
-            session_id = await store.get_session("123.45")
-            channel = await store.get_channel("123.45")
+            before = await store.get_session_count()
+            await store.save_session(thread_ts, "sess-1", "C123", namespace="default")
+            session_id = await store.get_session(thread_ts)
+            channel = await store.get_channel(thread_ts)
             count = await store.get_session_count()
             await store.close()
-            return session_id, channel, count
+            return session_id, channel, before, count
 
-        session_id, channel, count = asyncio.run(scenario())
+        session_id, channel, before, count = asyncio.run(scenario())
         self.assertEqual(session_id, "sess-1")
         self.assertEqual(channel, "C123")
-        self.assertEqual(count, 1)
+        self.assertEqual(count, before + 1)
 
     def test_store_run_summaries_in_postgres(self):
         async def scenario():
@@ -279,6 +283,61 @@ class PostgresStoreTests(unittest.TestCase):
         self.assertEqual(count, 2)
         self.assertTrue(any(call[0] == "save_session" for call in mirror_calls))
         self.assertTrue(any(call[0] == "delete_session" for call in mirror_calls))
+
+    def test_shadow_run_store_auto_creates_postgres_mirror_from_env(self):
+        namespace = f"shadow-run-{time.time_ns()}"
+
+        async def scenario(sqlite_path: str):
+            store = ShadowRunStore(db_path=sqlite_path)
+            await store.connect()
+            run_id = await store.create_run(namespace, mode="report")
+            await store.update_run(run_id=run_id, status="ok", pod_count=1, error_count=0, fix_count=0, report="shadow", log="shadow")
+            await store.close()
+
+        with tempfile.TemporaryDirectory(prefix="lucas-shadow-sqlite-") as tmpdir:
+            sqlite_path = str(Path(tmpdir) / "lucas.db")
+            asyncio.run(scenario(sqlite_path))
+
+            with sqlite3.connect(sqlite_path) as conn:
+                sqlite_count = conn.execute("SELECT COUNT(*) FROM runs WHERE namespace = ?", (namespace,)).fetchone()[0]
+
+        async def load_postgres_count():
+            store = PostgresRunStore()
+            await store.connect()
+            count = await store._db_conn().fetchval("SELECT COUNT(*) FROM runs WHERE namespace = $1", namespace)
+            await store.close()
+            return count
+
+        postgres_count = asyncio.run(load_postgres_count())
+        self.assertEqual(sqlite_count, 1)
+        self.assertEqual(postgres_count, 1)
+
+    def test_shadow_session_store_auto_creates_postgres_mirror_from_env(self):
+        thread_ts = f"shadow-session-{time.time_ns()}"
+
+        async def scenario(sqlite_path: str):
+            store = ShadowSessionStore(db_path=sqlite_path)
+            await store.connect()
+            await store.save_session(thread_ts, "sess-shadow", "C123", namespace="default")
+            await store.close()
+
+        with tempfile.TemporaryDirectory(prefix="lucas-shadow-session-") as tmpdir:
+            sqlite_path = str(Path(tmpdir) / "lucas.db")
+            asyncio.run(scenario(sqlite_path))
+
+            with sqlite3.connect(sqlite_path) as conn:
+                sqlite_value = conn.execute("SELECT session_id FROM slack_sessions WHERE thread_ts = ?", (thread_ts,)).fetchone()[0]
+
+        async def load_postgres_session():
+            store = PostgresSessionStore()
+            await store.connect()
+            value = await store.get_session(thread_ts)
+            await store.close()
+            return value
+
+        postgres_value = asyncio.run(load_postgres_session())
+        self.assertEqual(sqlite_value, "sess-shadow")
+        self.assertEqual(postgres_value, "sess-shadow")
 
 
 if __name__ == "__main__":
