@@ -26,11 +26,10 @@ LUCAS_NAMESPACE="a2w-lucas"
 TARGET_NAMESPACE="default"
 TARGET_NAMESPACES="default"
 LUCAS_MODE="autonomous"
-LLM_BACKEND="claude-code"
-LLM_PROVIDER="anthropic"
+LLM_BACKEND="openai-compatible"
+LLM_PROVIDER="openrouter"
 LLM_MODEL=""
 LLM_BASE_URL=""
-CLAUDE_MODEL="sonnet"
 OPENROUTER_DEFAULT_MODEL="stepfun/step-3.5-flash:free"
 OPENROUTER_DEFAULT_BASE_URL="https://openrouter.ai/api/v1"
 SCAN_INTERVAL="3600"
@@ -40,7 +39,7 @@ SECRET_BACKEND="manual"
 DASHBOARD_ENABLED="true"
 DASHBOARD_HOST=""
 KUBECTL_CONTEXT=""
-IMAGE_REGISTRY="ghcr.io/a2wio"
+IMAGE_REGISTRY="gdhb.goyoai.com/lukas"
 IMAGE_PULL_SECRET=""
 SLACK_WEBHOOK_URL=""
 SLACK_ALERT_CHANNEL=""
@@ -624,17 +623,15 @@ ${image_pull_secrets}
       initContainers:
         - name: fix-permissions
           image: busybox:latest
-          command: ["sh", "-c", "chmod -R 777 /data && chmod -R 777 /home/claude"]
+          command: ["sh", "-c", "chmod -R 777 /data"]
           securityContext:
             runAsUser: 0
           volumeMounts:
             - name: data
               mountPath: /data
-            - name: claude-sessions
-              mountPath: /home/claude/.claude
       containers:
         - name: agent
-          image: ${IMAGE_REGISTRY}/lucas-agent:latest
+          image: ${IMAGE_REGISTRY}/lucas-agent:postgres-shadow
           imagePullPolicy: Always
           env:
             - name: TARGET_NAMESPACE
@@ -647,16 +644,38 @@ ${image_pull_secrets}
               value: "${LLM_BACKEND}"
             - name: LLM_PROVIDER
               value: "${LLM_PROVIDER}"
-            - name: CLAUDE_MODEL
-              value: "${CLAUDE_MODEL}"
             - name: LLM_MODEL
               value: "${LLM_MODEL}"
             - name: LLM_BASE_URL
               value: "${LLM_BASE_URL}"
             - name: SQLITE_PATH
               value: "/data/lucas.db"
-            - name: HOME
-              value: "/home/claude"
+            - name: POSTGRES_HOST
+              value: "lucas-postgres"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: database
+                  optional: true
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: username
+                  optional: true
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: password
+                  optional: true
+            - name: POSTGRES_SSLMODE
+              value: "disable"
+            - name: POSTGRES_SHADOW_VALIDATE
+              value: "false"
             - name: SCAN_INTERVAL_SECONDS
               value: "${SCAN_INTERVAL}"
             - name: SLACK_EMERGENCY_ACTIONS_ENABLED
@@ -674,11 +693,11 @@ ${image_pull_secrets}
                 secretKeyRef:
                   name: llm-auth
                   key: api-key
-            - name: ANTHROPIC_API_KEY
+            - name: OPENROUTER_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: llm-auth
-                  key: api-key
+                  name: llm-auth-openrouter
+                  key: OPENROUTER_API_KEY
                   optional: true
             - name: SLACK_BOT_TOKEN
               valueFrom:
@@ -693,8 +712,6 @@ ${image_pull_secrets}
           volumeMounts:
             - name: data
               mountPath: /data
-            - name: claude-sessions
-              mountPath: /home/claude/.claude
           resources:
             requests:
               memory: "256Mi"
@@ -706,9 +723,6 @@ ${image_pull_secrets}
         - name: data
           persistentVolumeClaim:
             claimName: lucas-data
-        - name: claude-sessions
-          persistentVolumeClaim:
-            claimName: claude-sessions
 EOF
     print_success "Generated agent-deployment.yaml"
 
@@ -731,17 +745,38 @@ spec:
       labels:
         app: dashboard
     spec:
+      ${image_pull_secrets}
       containers:
         - name: dashboard
-          image: ${IMAGE_REGISTRY}/lucas-dashboard:latest
+          image: ${IMAGE_REGISTRY}/lucas-dashboard:postgres
           imagePullPolicy: Always
           env:
-            - name: SQLITE_PATH
-              value: "/data/lucas.db"
+            - name: POSTGRES_HOST
+              value: "lucas-postgres"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: database
+                  optional: true
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: username
+                  optional: true
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lucas-postgres-auth
+                  key: password
+                  optional: true
+            - name: POSTGRES_SSLMODE
+              value: "disable"
             - name: PORT
               value: "8080"
-            - name: LOG_PATH
-              value: "/data/lucas.log"
             - name: AUTH_USER
               valueFrom:
                 secretKeyRef:
@@ -754,32 +789,25 @@ spec:
                   key: password
           ports:
             - containerPort: 8080
-          volumeMounts:
-            - name: data
-              mountPath: /data
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "50m"
-            limits:
               memory: "128Mi"
               cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
           livenessProbe:
             httpGet:
               path: /health
               port: 8080
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: 20
+            periodSeconds: 15
           readinessProbe:
             httpGet:
               path: /health
               port: 8080
-            initialDelaySeconds: 5
-            periodSeconds: 5
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: lucas-data
+            initialDelaySeconds: 20
+            periodSeconds: 10
 EOF
     print_success "Generated dashboard-deployment.yaml"
 
@@ -819,7 +847,7 @@ metadata:
   name: a2w-lucas
   namespace: ${LUCAS_NAMESPACE}
 spec:
-  schedule: "*/5 * * * *"
+  schedule: "*/10 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -843,7 +871,7 @@ ${cron_image_pull_secrets}
                   mountPath: /data
           containers:
             - name: lucas
-              image: ${IMAGE_REGISTRY}/lucas:latest
+              image: ${IMAGE_REGISTRY}/lucas:postgres-shadow
               imagePullPolicy: Always
               env:
                 - name: TARGET_NAMESPACE
@@ -854,8 +882,32 @@ ${cron_image_pull_secrets}
                   value: "${LUCAS_MODE}"
                 - name: SQLITE_PATH
                   value: "/data/lucas.db"
-                - name: HOME
-                  value: "/home/claude"
+                - name: POSTGRES_HOST
+                  value: "lucas-postgres"
+                - name: POSTGRES_PORT
+                  value: "5432"
+                - name: POSTGRES_DB
+                  valueFrom:
+                    secretKeyRef:
+                      name: lucas-postgres-auth
+                      key: database
+                      optional: true
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: lucas-postgres-auth
+                      key: username
+                      optional: true
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: lucas-postgres-auth
+                      key: password
+                      optional: true
+                - name: POSTGRES_SSLMODE
+                  value: "disable"
+                - name: POSTGRES_SHADOW_VALIDATE
+                  value: "false"
                 - name: LLM_BACKEND
                   value: "${LLM_BACKEND}"
                 - name: LLM_PROVIDER
@@ -864,13 +916,17 @@ ${cron_image_pull_secrets}
                   value: "${LLM_MODEL}"
                 - name: LLM_BASE_URL
                   value: "${LLM_BASE_URL}"
-                - name: AUTH_MODE
-                  value: "api-key"
                 - name: LLM_API_KEY
                   valueFrom:
                     secretKeyRef:
                       name: llm-auth
                       key: api-key
+                      optional: true
+                - name: OPENROUTER_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: llm-auth-openrouter
+                      key: OPENROUTER_API_KEY
                       optional: true${cron_webhook_env}
               volumeMounts:
                 - name: data
