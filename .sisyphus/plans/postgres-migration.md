@@ -69,6 +69,42 @@ For this repository, **do not create git commits during execution unless the use
 
 ### Python driver
 
+Use `asyncpg`.
+
+### Go driver
+
+Use `github.com/jackc/pgx/v5/stdlib`.
+
+### Required dependency updates
+
+- modify `src/agent/main/requirements.txt` to add `asyncpg`
+- modify `src/dashboard/go.mod` to add `pgx/v5`
+
+### Dev Postgres test harness
+
+Bring up the harness with:
+
+```bash
+kubectl -n a2w-lucas apply -f k8s/postgres.yaml
+kubectl -n a2w-lucas rollout status deployment/lucas-postgres --timeout=300s
+kubectl -n a2w-lucas port-forward svc/lucas-postgres 5432:5432
+```
+
+Use these envs while the port-forward is active:
+
+```bash
+export POSTGRES_HOST=127.0.0.1
+export POSTGRES_PORT=5432
+export POSTGRES_DB=lucas
+export POSTGRES_USER=lucas
+export POSTGRES_PASSWORD=<dev-password>
+export POSTGRES_SSLMODE=disable
+```
+
+## Test Harness and Driver Decisions
+
+### Python driver
+
 Use:
 
 - `asyncpg`
