@@ -1,18 +1,49 @@
+import asyncio
 import sys
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock
+from types import ModuleType
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src/agent/main"))
-sys.modules.setdefault("aiosqlite", MagicMock())
-sys.modules.setdefault("dotenv", SimpleNamespace(load_dotenv=lambda *args, **kwargs: None))
+dotenv_stub = ModuleType("dotenv")
+dotenv_stub.load_dotenv = lambda *args, **kwargs: None
+sys.modules.setdefault("dotenv", dotenv_stub)
 
-from cron_runner import build_stored_report_payload
+from cron_runner import _load_last_run_time, build_stored_report_payload
 from report_utils import extract_report_payload, parse_run_report
 
 
 class CronRunnerTests(unittest.TestCase):
+    def test_load_last_run_time_reads_from_shadow_primary_store(self):
+        class FakeCursor:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def fetchone(self):
+                return ("2026-03-18 08:00:00",)
+
+        class FakeSQLiteDB:
+            def __init__(self):
+                self.calls = []
+
+            def execute(self, sql, params):
+                self.calls.append((sql, params))
+                return FakeCursor()
+
+        class FakeSQLiteStore:
+            def __init__(self):
+                self._db = FakeSQLiteDB()
+
+        class FakeShadowRunStore:
+            def __init__(self):
+                self.primary = FakeSQLiteStore()
+
+        last_run_time = asyncio.run(_load_last_run_time(FakeShadowRunStore(), "all", 42))
+        self.assertEqual(last_run_time, "2026-03-18 08:00:00")
+
     def test_extract_report_payload_uses_marked_section(self):
         report, full_log = extract_report_payload(
             'prefix\n===REPORT_START==={"status":"ok","pod_count":3}\n===REPORT_END===\nsuffix'

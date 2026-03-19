@@ -69,6 +69,28 @@ def load_prompt(prompt_file: str, replacements: dict[str, str]) -> str:
     return prompt
 
 
+async def _load_last_run_time(run_store: Any, run_scope: str, run_id: int) -> str:
+    read_store = getattr(run_store, "primary", run_store)
+    db = getattr(read_store, "_db", None)
+    if db is None:
+        return ""
+
+    if hasattr(db, "fetchval"):
+        value = await db.fetchval(
+            "SELECT COALESCE(MAX(ended_at)::text, '') FROM runs WHERE namespace = $1 AND status != 'running' AND id != $2",
+            run_scope,
+            run_id,
+        )
+        return str(value or "")
+
+    async with db.execute(
+        "SELECT COALESCE(MAX(ended_at), '') FROM runs WHERE namespace = ? AND status != 'running' AND id != ?",
+        (run_scope, run_id),
+    ) as cursor:
+        row = await cursor.fetchone()
+        return str(row[0]) if row and row[0] else ""
+
+
 async def send_slack_webhook(message: str) -> None:
     webhook = os.environ.get("SLACK_WEBHOOK_URL", "")
     if not webhook:
@@ -159,14 +181,7 @@ async def main() -> None:
             "PROMPT_FILE",
             "/app/master-prompt-report.md" if sre_mode == "report" else "/app/master-prompt-autonomous.md",
         )
-        last_run_time = ""
-        if run_store._db is not None:
-            async with run_store._db.execute(
-                "SELECT COALESCE(MAX(ended_at), '') FROM runs WHERE namespace = ? AND status != 'running' AND id != ?",
-                (run_scope, run_id),
-            ) as cursor:
-                row = await cursor.fetchone()
-                last_run_time = row[0] if row and row[0] else ""
+        last_run_time = await _load_last_run_time(run_store, run_scope, run_id)
 
         prompt = load_prompt(
             prompt_file,
