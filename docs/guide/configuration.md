@@ -83,3 +83,11 @@ Optional:
 - `LOG_PATH`: defaults to `/data/lucas.log`.
 - `AUTH_USER`: defaults to `a2wmin`.
 - `AUTH_PASS`: defaults to `a2wssword`.
+
+## Current runtime reference
+
+This page describes the generic configuration contract.
+
+For the currently applied non-secret runtime values and secret reference names, see:
+
+- `/ops/current-runtime-settings`
