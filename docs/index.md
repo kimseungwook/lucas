@@ -12,8 +12,11 @@ hero:
       text: Getting Started
       link: /guide/getting-started
     - theme: alt
-      text: Deployment
-      link: /ops/deployment
+      text: Current State
+      link: /specs/current-platform-state
+    - theme: alt
+      text: Runtime Settings
+      link: /ops/current-runtime-settings
 features:
   - title: Interactive Slack agent
     details: Ask Lucas to investigate pods, read logs, and report findings.
@@ -34,6 +37,13 @@ features:
 Planning and implementation specs for larger changes live in `docs/specs/`.
 
 - Provider-agnostic backend refactor: see `/specs/index`.
+- Current cross-cutting technical summary: see `/specs/current-platform-state`.
+- Current runtime settings reference: see `/ops/current-runtime-settings`.
+
+## Current Operational References
+
+- Current platform technical state: `/specs/current-platform-state`
+- Current runtime settings: `/ops/current-runtime-settings`
 
 ## Introduction
 

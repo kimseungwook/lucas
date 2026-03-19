@@ -14,6 +14,8 @@ export default defineConfig({
     },
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'Current State', link: '/specs/current-platform-state' },
+      { text: 'Runtime Settings', link: '/ops/current-runtime-settings' },
       { text: 'Ops', link: '/ops/deployment' },
       { text: 'Specs', link: '/specs/index' }
     ],
@@ -62,6 +64,7 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: 'Dashboard', link: '/ops/dashboard' },
+            { text: 'Current Runtime Settings', link: '/ops/current-runtime-settings' },
             { text: 'Docs Hosting', link: '/ops/docs-hosting' },
             { text: 'Operations', link: '/ops/operations' },
             { text: 'Runbooks', link: '/ops/runbooks' },
@@ -75,6 +78,7 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: 'Overview', link: '/specs/index' },
+            { text: 'Current Platform State', link: '/specs/current-platform-state' },
             { text: 'PRD', link: '/specs/prd-provider-agnostic-backend' },
             { text: 'TRD', link: '/specs/trd-provider-agnostic-backend' },
             { text: 'Implementation Plan', link: '/specs/implementation-plan-provider-backends' },
