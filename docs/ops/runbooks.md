@@ -19,3 +19,10 @@ Runbooks live in `src/agent/runbooks/` and are loaded by the agent. You can add 
 - Verify memory limits and recent usage.
 - Allowed fix: increase memory limit in small steps.
 - Escalate if limits need to exceed 4Gi or if leaks are suspected.
+
+## Pod Death Without Source Access
+
+- Use when a pod dies or restarts but the workload source code is not available.
+- Collect phase, reason, restart count, events, current logs, and previous logs first.
+- Classify into one primary bucket: config/secret, image/startup, resource/probe, dependency, infra/placement, or pod-local transient failure.
+- Prefer escalation over repeated restarts when the issue is not clearly isolated to one pod.
