@@ -13,7 +13,7 @@ Current scheduled reporting compresses pod health into `issues` and a short summ
 - Make pod status the primary reporting model.
 - Preserve compatibility with current `pod_count`, `error_count`, `fix_count`, `status`, `summary`, and `details` fields.
 - Keep Slack output concise and operator-friendly.
-- Keep the SQLite schema unchanged in this scope.
+- Keep the persisted report contract additive and compact in this scope.
 
 ## Non-Goals
 
@@ -24,7 +24,8 @@ Current scheduled reporting compresses pod health into `issues` and a short summ
 ## Current State
 
 - Scheduled monitoring already supports `TARGET_NAMESPACES=all` and deterministic all-namespace aggregation in development.
-- The current implementation still leads Slack summaries with `issues` and a short sentence rather than a status-first layout.
+- The current implementation already emits `status_breakdown`, `reason_breakdown`, and `top_problematic_pods` through the scheduled reporting path.
+- The current implementation can also append `pod_incident_summary` and `pod_incident_findings` additively when bounded incident triage is enabled for the scanned namespace/workload scope.
 - Dashboard and DB consumers still rely on the existing top-level compatibility fields.
 
 ## Proposed Reporting Model
@@ -38,6 +39,8 @@ Current scheduled reporting compresses pod health into `issues` and a short summ
 - `status_breakdown`
 - `reason_breakdown`
 - `top_problematic_pods`
+- `pod_incident_summary`
+- `pod_incident_findings`
 - `summary`
 
 ### Supporting fields
@@ -107,6 +110,22 @@ The stored `report` JSON should evolve toward this structure while preserving ex
       "restarts": 0
     }
   ],
+  "pod_incident_summary": {
+    "findings": 1,
+    "high": 1,
+    "medium": 0,
+    "evaluated_namespaces": 1
+  },
+  "pod_incident_findings": [
+    {
+      "type": "runtime.pod_incident",
+      "namespace": "ldap",
+      "severity": "high",
+      "resource": "pod/goyo-ldap-phpldapadmin-84b59df48c-mr4xv",
+      "category": "image_or_startup_failure",
+      "likely_cause": "Image retrieval or startup artifact failure is preventing the workload from starting."
+    }
+  ],
   "summary": "주의가 필요한 파드가 107건 있습니다.",
   "details": [
     {
@@ -122,7 +141,7 @@ The stored `report` JSON should evolve toward this structure while preserving ex
 - Keep top-level `pod_count`, `error_count`, `fix_count`, `status`, `summary`, and `details`.
 - `error_count` remains a derived metric from the status-first model.
 - `details` becomes a compatibility projection of `top_problematic_pods`.
-- Existing SQLite schema remains unchanged.
+- Additional structured sections such as `pod_incident_summary` and `pod_incident_findings` must remain additive.
 - Existing dashboard views must continue to work without schema migration.
 
 ## Slack Output Format
@@ -156,6 +175,12 @@ top_problematic_pods
 
 summary
 주의가 필요한 파드가 107건 있습니다.
+
+pod_incident_summary
+- findings=1 high=1 medium=0 evaluated_namespaces=1
+
+pod_incident_findings
+- runtime.pod_incident @ ldap severity=high category=image_or_startup_failure: Image retrieval or startup artifact failure is preventing the workload from starting.
 ```
 
 Formatting rules:
@@ -166,6 +191,7 @@ Formatting rules:
 - Do not include shell transcripts.
 - `status_breakdown` should represent real pod phase-level states.
 - `reason_breakdown` should represent detailed waiting/terminated reasons that explain unhealthy non-running pods.
+- Pod incident findings should stay compact and show at most 3 incident findings in Slack output.
 
 ## Deterministic Source of Truth
 
@@ -182,7 +208,6 @@ For scheduled scans:
 - `src/agent/main/cron_runner.py`
 - `src/agent/main/main.py` if scheduled callback formatting is kept aligned
 - `src/agent/main/sessions.py`
-- `src/dashboard/db/sqlite.go`
 - `src/dashboard/handlers/handlers.go`
 - dashboard run detail and run list templates
 
@@ -192,7 +217,7 @@ For scheduled scans:
 - `issues=0` must never be emitted when unhealthy pod states are present.
 - Slack output leads with status breakdown rather than issue count.
 - Existing dashboard counters still render.
-- Existing DB schema remains valid.
+- Additional incident sections remain additive and do not break existing consumers.
 - Report payload remains within current storage limits.
 
 ## QA Plan
@@ -201,6 +226,7 @@ For scheduled scans:
 - unit tests for parser compatibility
 - live `goyo-dev` run with known unhealthy pods
 - verify SQLite row contents
+- verify stored report payload contents in the current primary runtime store path
 - verify Slack message shape
 - verify dashboard still loads runs correctly
 

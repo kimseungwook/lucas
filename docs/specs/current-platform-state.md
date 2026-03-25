@@ -102,6 +102,19 @@ Primary references:
 - `docs/specs/status-first-reporting.md`
 - `docs/ops/dashboard.md`
 
+### Pod incident triage for opaque workloads
+
+- Lucas now has a deterministic pod-incident triage path for workloads whose source code is not available for direct remediation.
+- The current implementation is status-first and evidence-first.
+- It classifies incidents into bounded buckets such as config/secret failure, image/startup failure, resource/probe failure, dependency failure, infra/placement failure, or pod-local transient failure.
+- The current implementation supports namespace/workload scoping through dedicated env variables and can surface findings in both scheduled reporting and scheduled Slack scan output.
+
+Primary references:
+
+- `src/agent/main/pod_incident_triage.py`
+- `src/agent/runbooks/pod-death-without-source-access.md`
+- `docs/ops/runbooks.md`
+
 ### Dashboard runtime hardening
 
 - The dashboard no longer depends on the shared `lucas-data` PVC for its primary runtime path.
@@ -137,6 +150,7 @@ Primary references:
 - Uses OpenRouter through the `openai-compatible` backend path
 - Keeps Slack interaction and approved emergency-action controls
 - Stores runtime state through the current storage abstraction
+- Uses prompt-driven investigation plus bounded deterministic helpers for pod incident triage in scheduled scan output
 
 ### Scheduled scanner
 
@@ -144,6 +158,7 @@ Primary references:
 - Uses the report-oriented prompt path
 - Targets all namespaces in the current development rollout
 - Writes new scheduled run state directly to Postgres in the current dev cutover state
+- Can now append `pod_incident_summary` and `pod_incident_findings` for targeted namespaces/workloads
 
 ### Dashboard
 
