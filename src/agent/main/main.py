@@ -8,10 +8,13 @@ A Slack-integrated Claude agent that:
 """
 
 import asyncio
+import importlib
+import json
 import logging
 import os
 import re
 from pathlib import Path
+from typing import Any, Mapping, TypedDict
 
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
@@ -20,7 +23,8 @@ from slack_sdk.web.async_client import AsyncWebClient
 try:
     from .cluster_snapshot import build_interactive_snapshot, build_namespace_snapshot
     from .llm import calculate_cost, create_backend, resolve_llm_config, validate_llm_config
-    from .report_utils import extract_report_payload, format_slack_scan_message, parse_run_report
+    from .pod_incident_triage import collect_pod_incident_inputs, resolve_pod_incident_target_namespaces
+    from .report_utils import extract_report_payload, format_slack_scan_message, merge_pod_incident_report, parse_run_report
     from .slack_actions import (
         confirmation_accepted,
         confirmation_prompt,
@@ -33,20 +37,43 @@ try:
     from .tools import SlackTools, resolve_pending_reply
     from .scheduler import SREScheduler
 except ImportError:
-    from cluster_snapshot import build_interactive_snapshot, build_namespace_snapshot
-    from llm import calculate_cost, create_backend, resolve_llm_config, validate_llm_config
-    from report_utils import extract_report_payload, format_slack_scan_message, parse_run_report
-    from slack_actions import (
-        confirmation_accepted,
-        confirmation_prompt,
-        execute_slack_kube_action,
-        format_action_audit_line,
-        parse_slack_kube_action,
-        slack_action_allowed,
-    )
-    from sessions import SessionStore, RunStore
-    from tools import SlackTools, resolve_pending_reply
-    from scheduler import SREScheduler
+    cluster_snapshot = importlib.import_module("cluster_snapshot")
+    llm = importlib.import_module("llm")
+    pod_incident_triage = importlib.import_module("pod_incident_triage")
+    report_utils = importlib.import_module("report_utils")
+    slack_actions = importlib.import_module("slack_actions")
+    sessions = importlib.import_module("sessions")
+    tools = importlib.import_module("tools")
+    scheduler_mod = importlib.import_module("scheduler")
+
+    build_interactive_snapshot = cluster_snapshot.build_interactive_snapshot
+    build_namespace_snapshot = cluster_snapshot.build_namespace_snapshot
+
+    calculate_cost = llm.calculate_cost
+    create_backend = llm.create_backend
+    resolve_llm_config = llm.resolve_llm_config
+    validate_llm_config = llm.validate_llm_config
+
+    collect_pod_incident_inputs = pod_incident_triage.collect_pod_incident_inputs
+    resolve_pod_incident_target_namespaces = pod_incident_triage.resolve_pod_incident_target_namespaces
+
+    extract_report_payload = report_utils.extract_report_payload
+    format_slack_scan_message = report_utils.format_slack_scan_message
+    merge_pod_incident_report = report_utils.merge_pod_incident_report
+    parse_run_report = report_utils.parse_run_report
+
+    confirmation_accepted = slack_actions.confirmation_accepted
+    confirmation_prompt = slack_actions.confirmation_prompt
+    execute_slack_kube_action = slack_actions.execute_slack_kube_action
+    format_action_audit_line = slack_actions.format_action_audit_line
+    parse_slack_kube_action = slack_actions.parse_slack_kube_action
+    slack_action_allowed = slack_actions.slack_action_allowed
+
+    SessionStore = sessions.SessionStore
+    RunStore = sessions.RunStore
+    SlackTools = tools.SlackTools
+    resolve_pending_reply = tools.resolve_pending_reply
+    SREScheduler = scheduler_mod.SREScheduler
 
 # Configure logging
 logging.basicConfig(
@@ -77,11 +104,51 @@ llm_backend = create_backend(LLM_CONFIG)
 app = AsyncApp(token=SLACK_BOT_TOKEN)
 
 # Global instances (initialized in main)
-session_store: SessionStore | None = None
-run_store: RunStore | None = None
-slack_tools: SlackTools | None = None
-scheduler: SREScheduler | None = None
+session_store: Any | None = None
+run_store: Any | None = None
+slack_tools: Any | None = None
+scheduler: Any | None = None
 slack_client: AsyncWebClient | None = None
+
+
+class TokenUsage(TypedDict):
+    input_tokens: int
+    output_tokens: int
+    model: str
+    cost: float
+
+
+def _require_session_store() -> Any:
+    store = session_store
+    if store is None:
+        raise RuntimeError("Session store is not initialized")
+    return store
+
+
+def _require_run_store() -> Any:
+    store = run_store
+    if store is None:
+        raise RuntimeError("Run store is not initialized")
+    return store
+
+
+def _require_slack_tools() -> Any:
+    tools_ref = slack_tools
+    if tools_ref is None:
+        raise RuntimeError("Slack tools are not initialized")
+    return tools_ref
+
+
+def _require_slack_client() -> AsyncWebClient:
+    client = slack_client
+    if client is None:
+        raise RuntimeError("Slack client is not initialized")
+    return client
+
+
+def _event_str(event: Mapping[str, object], key: str, default: str = "") -> str:
+    value = event.get(key, default)
+    return value if isinstance(value, str) else default
 
 
 def load_system_prompt(namespace: str | None = None, thread_ts: str | None = None, channel: str | None = None) -> str:
@@ -112,37 +179,69 @@ def sanitize_slack_text(text: str) -> str:
     return re.sub(r'<@[A-Z0-9]+>', '', text or '').strip()
 
 
+def collect_namespace_pod_incident_report(namespace: str) -> dict[str, object]:
+    if namespace not in set(resolve_pod_incident_target_namespaces()):
+        return {"pod_incident_summary": {}, "pod_incident_findings": []}
+
+    result = collect_pod_incident_inputs(namespace)
+    raw_findings = result.get("incidents", []) if isinstance(result, dict) else []
+    findings = [item for item in raw_findings if isinstance(item, dict)]
+    if not findings:
+        return {
+            "pod_incident_summary": {"findings": 0, "high": 0, "medium": 0, "evaluated_namespaces": 1},
+            "pod_incident_findings": [],
+        }
+
+    high = sum(1 for item in findings if str(item.get("severity", "")) == "high")
+    medium = sum(1 for item in findings if str(item.get("severity", "")) == "medium")
+    return {
+        "pod_incident_summary": {
+            "findings": len(findings),
+            "high": high,
+            "medium": medium,
+            "evaluated_namespaces": 1,
+        },
+        "pod_incident_findings": findings,
+    }
+
+
 async def build_thread_history(channel: str, thread_ts: str, exclude_ts: str | None = None) -> list[dict[str, str]]:
-    if not slack_client:
+    client = slack_client
+    if client is None:
         return []
 
     history: list[dict[str, str]] = []
-    replies = await slack_client.conversations_replies(channel=channel, ts=thread_ts, limit=20)
+    replies = await client.conversations_replies(channel=channel, ts=thread_ts, limit=20)
     for message in replies.get("messages", []):
+        if not isinstance(message, dict):
+            continue
         if exclude_ts and message.get("ts") == exclude_ts:
             continue
-        text = sanitize_slack_text(message.get("text", ""))
+        text = sanitize_slack_text(_event_str(message, "text"))
         if not text:
             continue
-        role = "assistant" if message.get("user") == slack_bot_user_id or message.get("bot_id") else "user"
+        role = "assistant" if _event_str(message, "user") == slack_bot_user_id or bool(_event_str(message, "bot_id")) else "user"
         history.append({"role": role, "content": text})
     return history[-12:]
 
 
 async def build_dm_history(channel: str, exclude_ts: str | None = None) -> list[dict[str, str]]:
-    if not slack_client:
+    client = slack_client
+    if client is None:
         return []
 
     history: list[dict[str, str]] = []
-    response = await slack_client.conversations_history(channel=channel, limit=15)
+    response = await client.conversations_history(channel=channel, limit=15)
     messages = list(reversed(response.get("messages", [])))
     for message in messages:
+        if not isinstance(message, dict):
+            continue
         if exclude_ts and message.get("ts") == exclude_ts:
             continue
-        text = sanitize_slack_text(message.get("text", ""))
+        text = sanitize_slack_text(_event_str(message, "text"))
         if not text:
             continue
-        role = "assistant" if message.get("user") == slack_bot_user_id or message.get("bot_id") else "user"
+        role = "assistant" if _event_str(message, "user") == slack_bot_user_id or bool(_event_str(message, "bot_id")) else "user"
         history.append({"role": role, "content": text})
     return history[-12:]
 
@@ -154,7 +253,7 @@ async def run_agent(
     thread_ts: str | None = None,
     channel: str | None = None,
     history: list[dict[str, str]] | None = None,
-) -> tuple[str, str | None, dict[str, int | float | str]]:
+) -> tuple[str, str | None, TokenUsage]:
     system_prompt = load_system_prompt(namespace, thread_ts, channel)
     effective_prompt = prompt
 
@@ -191,13 +290,15 @@ async def run_agent(
         },
     )
 
-    token_usage = {
-        "input_tokens": result.get("input_tokens", 0),
-        "output_tokens": result.get("output_tokens", 0),
-        "model": result.get("model", default_model_name()),
-        "cost": result.get("cost", 0.0),
+    token_usage: TokenUsage = {
+        "input_tokens": int(result.get("input_tokens", 0) or 0),
+        "output_tokens": int(result.get("output_tokens", 0) or 0),
+        "model": str(result.get("model", default_model_name()) or default_model_name()),
+        "cost": float(result.get("cost", 0.0) or 0.0),
     }
-    return result.get("text", "No response from agent"), result.get("session_id"), token_usage
+    text_value = str(result.get("text", "No response from agent") or "No response from agent")
+    session_value = result.get("session_id")
+    return text_value, str(session_value) if session_value else None, token_usage
 
 
 async def handle_slack_ask_in_prompt(
@@ -223,7 +324,8 @@ async def handle_slack_ask_in_prompt(
         logger.info(f"Detected slack_ask request: {question[:100]}...")
 
         # Ask via Slack and wait for reply
-        reply = await slack_tools.slack_ask(
+        tools_ref = _require_slack_tools()
+        reply = await tools_ref.slack_ask(
             message=question,
             channel=channel,
             thread_ts=thread_ts,
@@ -267,7 +369,8 @@ async def maybe_handle_slack_action(
     logger.info("Slack emergency action requested by %s in %s: %s", user_id, channel, format_action_audit_line(action))
 
     if action.is_mutating:
-        confirmation = await slack_tools.slack_ask(
+        tools_ref = _require_slack_tools()
+        confirmation = await tools_ref.slack_ask(
             message=confirmation_prompt(action),
             channel=channel,
             thread_ts=thread_ts,
@@ -295,10 +398,10 @@ async def maybe_handle_slack_action(
 @app.event("app_mention")
 async def handle_mention(event: dict[str, object], say):
     """Handle @mentions of the bot."""
-    channel = event["channel"]
-    thread_ts = event.get("thread_ts", event["ts"])
-    user_message = event.get("text", "")
-    user_id = event.get("user", "")
+    channel = _event_str(event, "channel")
+    thread_ts = _event_str(event, "thread_ts") or _event_str(event, "ts")
+    user_message = _event_str(event, "text")
+    user_id = _event_str(event, "user")
 
     # Remove the bot mention from the message
     user_message = sanitize_slack_text(user_message)
@@ -322,7 +425,9 @@ async def handle_mention(event: dict[str, object], say):
     logger.info(f"Mention from {user_id} in {channel}: {user_message[:100]}...")
 
     # Check for existing session
-    session_id = await session_store.get_session(thread_ts)
+    session_store_ref = _require_session_store()
+    run_store_ref = _require_run_store()
+    session_id = await session_store_ref.get_session(thread_ts)
 
     # Send typing indicator
     await say(text=":robot_face: Investigating...", thread_ts=thread_ts)
@@ -337,7 +442,7 @@ async def handle_mention(event: dict[str, object], say):
 
         # Save session mapping
         if new_session_id:
-            await session_store.save_session(thread_ts, new_session_id, channel)
+            await session_store_ref.save_session(thread_ts, new_session_id, channel)
 
         # Check for slack_ask requests and handle them
         while True:
@@ -355,20 +460,20 @@ async def handle_mention(event: dict[str, object], say):
                 thread_ts=thread_ts
             )
             # Accumulate token usage
-            token_usage["input_tokens"] += more_tokens.get("input_tokens", 0)
-            token_usage["output_tokens"] += more_tokens.get("output_tokens", 0)
-            token_usage["cost"] = token_usage.get("cost", 0) + more_tokens.get("cost", 0)
+            token_usage["input_tokens"] += more_tokens["input_tokens"]
+            token_usage["output_tokens"] += more_tokens["output_tokens"]
+            token_usage["cost"] += more_tokens["cost"]
 
         # Record token usage for interactive messages (without run_id)
-        if token_usage.get("input_tokens") or token_usage.get("output_tokens"):
+        if token_usage["input_tokens"] or token_usage["output_tokens"]:
             try:
-                await run_store.record_token_usage(
+                await run_store_ref.record_token_usage(
                     run_id=0,  # No run_id for interactive messages
                     namespace="interactive",
-                    model=token_usage.get("model", default_model_name()),
-                    input_tokens=token_usage.get("input_tokens", 0),
-                    output_tokens=token_usage.get("output_tokens", 0),
-                    cost=token_usage.get("cost", 0)
+                    model=token_usage["model"],
+                    input_tokens=token_usage["input_tokens"],
+                    output_tokens=token_usage["output_tokens"],
+                    cost=token_usage["cost"],
                 )
             except Exception as e:
                 logger.warning(f"Failed to record token usage: {e}")
@@ -395,10 +500,10 @@ async def handle_message(event: dict[str, object], say):
     if event.get("bot_id") or event.get("subtype"):
         return
 
-    thread_ts = event.get("thread_ts")
-    channel = event["channel"]
-    text = event.get("text", "")
-    channel_type = event.get("channel_type", "")
+    thread_ts = _event_str(event, "thread_ts")
+    channel = _event_str(event, "channel")
+    text = _event_str(event, "text")
+    channel_type = _event_str(event, "channel_type")
 
     # Check if this is a reply to a pending slack_ask
     if thread_ts and resolve_pending_reply(thread_ts, text):
@@ -412,7 +517,7 @@ async def handle_message(event: dict[str, object], say):
         if await maybe_handle_slack_action(
             text=text,
             channel=channel,
-            thread_ts=event.get("ts", channel),
+            thread_ts=_event_str(event, "ts") or channel,
             user_id=str(event.get("user", "")),
             say=say,
         ):
@@ -420,10 +525,12 @@ async def handle_message(event: dict[str, object], say):
 
         # Use channel as thread_ts for DM session tracking
         dm_session_key = f"dm_{channel}"
-        session_id = await session_store.get_session(dm_session_key)
+        session_store_ref = _require_session_store()
+        run_store_ref = _require_run_store()
+        session_id = await session_store_ref.get_session(dm_session_key)
 
         try:
-            history = None if LLM_CONFIG.supports_resume else await build_dm_history(channel, exclude_ts=event.get("ts"))
+            history = None if LLM_CONFIG.supports_resume else await build_dm_history(channel, exclude_ts=_event_str(event, "ts") or None)
             response, new_session_id, token_usage = await run_agent(
                 prompt=text,
                 session_id=session_id,
@@ -433,18 +540,18 @@ async def handle_message(event: dict[str, object], say):
 
             # Save session for DM continuity
             if new_session_id:
-                await session_store.save_session(dm_session_key, new_session_id, channel)
+                await session_store_ref.save_session(dm_session_key, new_session_id, channel)
 
             # Record token usage for DMs
-            if token_usage.get("input_tokens") or token_usage.get("output_tokens"):
+            if token_usage["input_tokens"] or token_usage["output_tokens"]:
                 try:
-                    await run_store.record_token_usage(
+                    await run_store_ref.record_token_usage(
                         run_id=0,
                         namespace="dm",
-                        model=token_usage.get("model", default_model_name()),
-                        input_tokens=token_usage.get("input_tokens", 0),
-                        output_tokens=token_usage.get("output_tokens", 0),
-                        cost=token_usage.get("cost", 0)
+                        model=token_usage["model"],
+                        input_tokens=token_usage["input_tokens"],
+                        output_tokens=token_usage["output_tokens"],
+                        cost=token_usage["cost"],
                     )
                 except Exception as e:
                     logger.warning(f"Failed to record token usage: {e}")
@@ -465,7 +572,9 @@ async def handle_message(event: dict[str, object], say):
         return
 
     # Check if this thread has an active session
-    session_id = await session_store.get_session(thread_ts)
+    session_store_ref = _require_session_store()
+    run_store_ref = _require_run_store()
+    session_id = await session_store_ref.get_session(thread_ts)
     if not session_id and LLM_CONFIG.supports_resume:
         # No session for this thread, ignore
         return
@@ -483,7 +592,7 @@ async def handle_message(event: dict[str, object], say):
 
     try:
         # Continue the conversation
-        history = None if LLM_CONFIG.supports_resume else await build_thread_history(channel, thread_ts, exclude_ts=event.get("ts"))
+        history = None if LLM_CONFIG.supports_resume else await build_thread_history(channel, thread_ts, exclude_ts=_event_str(event, "ts") or None)
         if history is not None and not any(message.get("role") == "assistant" for message in history):
             return
         response, new_session_id, token_usage = await run_agent(
@@ -496,18 +605,18 @@ async def handle_message(event: dict[str, object], say):
 
         # Update session if changed
         if new_session_id and new_session_id != session_id:
-            await session_store.save_session(thread_ts, new_session_id, channel)
+            await session_store_ref.save_session(thread_ts, new_session_id, channel)
 
         # Record token usage for thread replies
-        if token_usage.get("input_tokens") or token_usage.get("output_tokens"):
+        if token_usage["input_tokens"] or token_usage["output_tokens"]:
             try:
-                await run_store.record_token_usage(
+                await run_store_ref.record_token_usage(
                     run_id=0,
                     namespace="thread",
-                    model=token_usage.get("model", default_model_name()),
-                    input_tokens=token_usage.get("input_tokens", 0),
-                    output_tokens=token_usage.get("output_tokens", 0),
-                    cost=token_usage.get("cost", 0)
+                    model=token_usage["model"],
+                    input_tokens=token_usage["input_tokens"],
+                    output_tokens=token_usage["output_tokens"],
+                    cost=token_usage["cost"],
                 )
             except Exception as e:
                 logger.warning(f"Failed to record token usage: {e}")
@@ -540,7 +649,9 @@ async def run_scheduled_scan(namespace: str):
     logger.info(f"Running scheduled scan for namespace: {namespace}")
 
     # Create run record in database
-    run_id = await run_store.create_run(namespace, mode=SRE_MODE)
+    run_store_ref = _require_run_store()
+    session_store_ref = _require_session_store()
+    run_id = await run_store_ref.create_run(namespace, mode=SRE_MODE)
     logger.info(f"Created run #{run_id} for namespace {namespace}")
 
     prompt = f"""Run a health check on namespace '{namespace}'.
@@ -577,35 +688,44 @@ At the end, provide a brief summary with counts: how many pods checked, how many
         )
 
         # Record token usage for this run
-        if token_usage.get("input_tokens") or token_usage.get("output_tokens"):
+        if token_usage["input_tokens"] or token_usage["output_tokens"]:
             # Use cost from Claude CLI if available, otherwise calculate
-            cost = token_usage.get("cost", 0.0)
+            cost = token_usage["cost"]
             if not cost and LLM_CONFIG.backend == "claude-code":
                 cost = calculate_cost(
-                    token_usage.get("model", default_model_name()),
-                    token_usage.get("input_tokens", 0),
-                    token_usage.get("output_tokens", 0)
+                    token_usage["model"],
+                    token_usage["input_tokens"],
+                    token_usage["output_tokens"],
                 )
-            await run_store.record_token_usage(
+            await run_store_ref.record_token_usage(
                 run_id=run_id,
                 namespace=namespace,
-                model=token_usage.get("model", default_model_name()),
-                input_tokens=token_usage.get("input_tokens", 0),
-                output_tokens=token_usage.get("output_tokens", 0),
-                cost=cost
+                model=token_usage["model"],
+                input_tokens=token_usage["input_tokens"],
+                output_tokens=token_usage["output_tokens"],
+                cost=float(cost),
             )
-            logger.info(f"Recorded token usage: {token_usage.get('input_tokens', 0)} in, {token_usage.get('output_tokens', 0)} out, ${cost:.4f}")
+            logger.info(f"Recorded token usage: {token_usage['input_tokens']} in, {token_usage['output_tokens']} out, ${cost:.4f}")
 
         report_text, _ = extract_report_payload(response)
         parsed_report = parse_run_report(report_text)
+        try:
+            pod_incident_report = collect_namespace_pod_incident_report(namespace)
+        except Exception as exc:
+            logger.warning("Pod incident triage skipped for namespace %s: %s", namespace, exc)
+            pod_incident_report = {"pod_incident_summary": {}, "pod_incident_findings": []}
+        parsed_report = merge_pod_incident_report(parsed_report, pod_incident_report)
         pod_count = int(parsed_report["pod_count"])
         error_count = int(parsed_report["error_count"])
         status = str(parsed_report["status"])
         details = parsed_report["details"] if isinstance(parsed_report["details"], list) else []
         summary = str(parsed_report["summary"])
+        pod_incident_summary = parsed_report.get("pod_incident_summary") if isinstance(parsed_report.get("pod_incident_summary"), dict) else {}
+        pod_incident_findings = parsed_report.get("pod_incident_findings") if isinstance(parsed_report.get("pod_incident_findings"), list) else []
+        report_text = json.dumps(parsed_report, ensure_ascii=False)
 
         # Update run record
-        await run_store.update_run(
+        await run_store_ref.update_run(
             run_id=run_id,
             status=status,
             pod_count=pod_count,
@@ -628,13 +748,15 @@ At the end, provide a brief summary with counts: how many pods checked, how many
                     pod_count=pod_count,
                     error_count=error_count,
                     details=details,
+                    pod_incident_summary=pod_incident_summary,
+                    pod_incident_findings=pod_incident_findings,
                 ) + "\n\n_Reply to this thread for follow-up_"
             )
 
             # Save session for potential follow-up
             if session_id:
-                await session_store.save_session(
-                    result["ts"],
+                await session_store_ref.save_session(
+                    str(result["ts"]),
                     session_id,
                     SRE_ALERT_CHANNEL,
                     namespace
@@ -647,7 +769,7 @@ At the end, provide a brief summary with counts: how many pods checked, how many
     except Exception as e:
         logger.error(f"Error in scheduled scan for {namespace}: {e}", exc_info=True)
         # Update run as failed
-        await run_store.update_run(
+        await run_store_ref.update_run(
             run_id=run_id,
             status="failed",
             report=str(e)
@@ -677,35 +799,39 @@ async def main():
 
     # Initialize session store
     session_store = SessionStore()
-    await session_store.connect()
+    session_store_ref = _require_session_store()
+    await session_store_ref.connect()
     logger.info("Session store initialized")
 
     # Initialize run store (for dashboard)
     run_store = RunStore()
-    await run_store.connect()
+    run_store_ref = _require_run_store()
+    await run_store_ref.connect()
     logger.info("Run store initialized")
 
     # Initialize Slack tools
     global slack_client
     slack_client = AsyncWebClient(token=SLACK_BOT_TOKEN)
-    slack_tools = SlackTools(slack_client, default_channel=SRE_ALERT_CHANNEL)
+    slack_client_ref = _require_slack_client()
+    slack_tools = SlackTools(slack_client_ref, default_channel=SRE_ALERT_CHANNEL)
 
     # Get bot user ID if not set
     global slack_bot_user_id
     if not slack_bot_user_id:
-        auth_response = await slack_client.auth_test()
-        slack_bot_user_id = auth_response["user_id"]
+        auth_response = await slack_client_ref.auth_test()
+        slack_bot_user_id = str(auth_response["user_id"])
         logger.info(f"Bot user ID: {slack_bot_user_id}")
 
     # Initialize scheduler for periodic scans
-    scheduler = SREScheduler(
+    scheduler_ref = SREScheduler(
         scan_callback=run_scheduled_scan,
         interval_seconds=SCAN_INTERVAL
     )
+    scheduler = scheduler_ref
 
     # Start scheduler if alert channel is configured
     if SRE_ALERT_CHANNEL:
-        await scheduler.start()
+        await scheduler_ref.start()
         logger.info("Scheduler started")
     else:
         logger.warning("SRE_ALERT_CHANNEL not set, scheduled scans disabled")
@@ -715,8 +841,8 @@ async def main():
         while True:
             await asyncio.sleep(86400)  # Run once per day
             try:
-                deleted = await session_store.cleanup_old_sessions(days=7)
-                count = await session_store.get_session_count()
+                deleted = await session_store_ref.cleanup_old_sessions(days=7)
+                count = await session_store_ref.get_session_count()
                 logger.info(f"Session cleanup: deleted {deleted}, remaining {count}")
             except Exception as e:
                 logger.error(f"Session cleanup failed: {e}")
@@ -732,9 +858,9 @@ async def main():
     try:
         await handler.start_async()
     finally:
-        await scheduler.stop()
-        await session_store.close()
-        await run_store.close()
+        await scheduler_ref.stop()
+        await session_store_ref.close()
+        await run_store_ref.close()
 
 
 if __name__ == "__main__":
