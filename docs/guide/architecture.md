@@ -5,7 +5,8 @@
 - **Agent (Slack)**: long-running service that answers Slack mentions and runs scheduled scans.
 - **Agent (CronJob)**: batch worker that runs on a schedule and writes a report.
 - **Dashboard**: web UI for runs, sessions, fixes, and token usage.
-- **SQLite**: shared database for runs, fixes, sessions, and token usage.
+- **Postgres**: primary runtime store for runs, sessions, fixes, token usage, recovery actions, and run summaries.
+- **SQLite**: compatibility path that may still exist during transition cleanup but is no longer the intended primary runtime store.
 - **PVCs**: persistent storage for `lucas.db`, logs, and Claude sessions when resume support is enabled.
 - **OpenViking (optional)**: environment-provided memory/context support when available.
 
@@ -13,12 +14,18 @@
 
 1. A Slack mention or a scheduled scan triggers the agent.
 2. The agent resolves the configured LLM backend and runs either Claude Code or an OpenAI-compatible provider (Groq, Kimi, Gemini, OpenRouter) with kubectl access.
-3. Findings are written to SQLite.
-4. The dashboard reads from SQLite.
+3. Scheduled reporting can merge deterministic helpers such as pod incident triage into the final report payload.
+4. Findings are written to Postgres in the current primary runtime path.
+5. The dashboard reads the persisted runtime data.
 
 ## Scheduled scans
 
 The interactive agent includes a scheduler. It scans namespaces from `TARGET_NAMESPACES` every `SCAN_INTERVAL_SECONDS` and posts results to `SRE_ALERT_CHANNEL`.
+
+The current scheduled scan path can also merge bounded pod incident triage findings for namespaces/workloads selected through:
+
+- `POD_INCIDENT_TARGET_NAMESPACES`
+- `POD_INCIDENT_TARGET_WORKLOADS`
 
 ## Master prompts
 

@@ -14,8 +14,8 @@
 
 ## Dashboard shows no data
 
-- Confirm the agent and dashboard use the same PVC (`lucas-data`).
-- Check `SQLITE_PATH` in both deployments.
+- Confirm the agent, cron, and dashboard point to the same Postgres service and credentials.
+- Check recent runs are being written to the primary runtime store.
 - Open `/health` on the dashboard service.
 
 ## Permission errors in /data or /home/claude/.claude

@@ -9,8 +9,12 @@ Set:
 - `TARGET_NAMESPACES` (comma-separated)
 - `SCAN_INTERVAL_SECONDS`
 - `SRE_ALERT_CHANNEL`
+- `POD_INCIDENT_TARGET_NAMESPACES` (optional, comma-separated override for pod incident triage)
+- `POD_INCIDENT_TARGET_WORKLOADS` (optional, comma-separated `<kind>/<name>` list such as `deployment/api`)
 
 If `SRE_ALERT_CHANNEL` is empty, scheduled scans are disabled.
+
+Scheduled scan output can now include bounded pod-incident triage findings when the namespace/workload scope matches the configured pod-incident target settings.
 
 ## Storage and data
 
@@ -56,6 +60,20 @@ Reference:
 - CronJob runs write to `/data/lucas.log`.
 - The dashboard live file viewer is planned to be removed or reduced during the Postgres cutover so it no longer depends on shared `/data` storage.
 - The agent logs are available via `kubectl logs`.
+
+## Pod incident triage
+
+- This path is read-only and evidence-first.
+- It is intended for pods that die or restart when direct application source remediation is not available.
+- The current implementation groups incidents into bounded buckets:
+  - config/secret failure
+  - image/startup failure
+  - resource/probe failure
+  - dependency/connectivity failure
+  - infra/placement failure
+  - pod-local transient failure
+- The goal is to produce a better first operator message, not to auto-fix every opaque workload failure.
+- If the evidence points to config, image, dependency, or infra causes, operators should prefer escalation over repeated restart churn.
 
 ## Drift auditor
 
