@@ -57,6 +57,7 @@ Lucas is a Kubernetes operations and reliability agent. It runs in your cluster,
 
 - Slack-first investigations with thread context and follow-ups.
 - Scheduled scans across namespaces.
+- Deterministic incident triage for opaque pod failures, with bounded findings in reports and Slack alerts.
 - Runbooks for approved fixes and escalation rules.
 - Dashboard for runs, sessions, and token usage.
 
