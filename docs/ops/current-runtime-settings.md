@@ -26,6 +26,8 @@ Current non-secret env:
 
 - `TARGET_NAMESPACE=default`
 - `TARGET_NAMESPACES=default`
+- `POD_INCIDENT_TARGET_NAMESPACES=` (template default; empty falls back to `TARGET_NAMESPACE(S)`)
+- `POD_INCIDENT_TARGET_WORKLOADS=` (template default; empty means all workloads in the scoped namespaces)
 - `SRE_MODE=watcher`
 - `LLM_BACKEND=openai-compatible`
 - `LLM_PROVIDER=openrouter`
@@ -67,6 +69,8 @@ Current non-secret env:
 
 - `TARGET_NAMESPACE=default`
 - `TARGET_NAMESPACES=all`
+- `POD_INCIDENT_TARGET_NAMESPACES=` (template default; empty falls back to `TARGET_NAMESPACE(S)`)
+- `POD_INCIDENT_TARGET_WORKLOADS=` (template default; empty means all workloads in the scoped namespaces)
 - `SRE_MODE=report`
 - `LLM_BACKEND=openai-compatible`
 - `LLM_PROVIDER=openrouter`
@@ -159,6 +163,8 @@ Current non-secret env:
 
 - `TARGET_NAMESPACE=all`
 - `TARGET_NAMESPACES=all`
+- `POD_INCIDENT_TARGET_NAMESPACES=` (template default; empty falls back to `TARGET_NAMESPACE(S)`)
+- `POD_INCIDENT_TARGET_WORKLOADS=` (template default; empty means all workloads in the scoped namespaces)
 - `SRE_MODE=autonomous`
 - `LLM_BACKEND=openai-compatible`
 - `LLM_PROVIDER=openrouter`
@@ -200,6 +206,8 @@ Current non-secret env:
 
 - `TARGET_NAMESPACE=all`
 - `TARGET_NAMESPACES=all`
+- `POD_INCIDENT_TARGET_NAMESPACES=` (template default; empty falls back to `TARGET_NAMESPACE(S)`)
+- `POD_INCIDENT_TARGET_WORKLOADS=` (template default; empty means all workloads in the scoped namespaces)
 - `SRE_MODE=autonomous`
 - `LLM_BACKEND=openai-compatible`
 - `LLM_PROVIDER=openrouter`
