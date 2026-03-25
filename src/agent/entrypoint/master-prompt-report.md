@@ -53,13 +53,25 @@ sqlite3 $SQLITE_PATH "INSERT INTO fixes (run_id, timestamp, namespace, pod_name,
    c. Record to database
 
 4. ANALYZE THE ERROR (for reporting)
-   - What type of error is it?
-   - What is the likely cause?
-   - What would be the recommended fix?
-   - Is it something that could be auto-fixed or requires human intervention?
+   - Record factual evidence first: phase, reason, restart count, owner workload, top events, and log clues
+   - If restart count is non-zero, you MUST inspect `kubectl logs --previous` before concluding
+   - Classify the issue into one primary bucket:
+     - `config_or_secret_failure`
+     - `image_or_startup_failure`
+     - `resource_or_probe_failure`
+     - `dependency_connectivity_failure`
+     - `infra_or_placement_failure`
+     - `pod_local_transient_failure`
+   - State the likely cause separately from the evidence
+   - Recommend only the shallowest reversible next action, or escalation when the cause is not clearly pod-local
+   - Never imply a fix was applied in report-only mode
 
 5. DO NOT ATTEMPT ANY FIXES
    Just record findings and recommendations
+
+6. USE RUNBOOKS WHEN AVAILABLE
+   - If the issue matches `CrashLoopBackOff`, `ImagePullBackOff`, `OOMKilled`, or `Pod Death Without Source Access`, follow the runbook wording and escalation boundary
+   - If no runbook fits, keep the recommendation conservative and evidence-based
 
 ## CLOSING REPORT
 At the end, you MUST output a JSON report in this exact format:
@@ -97,6 +109,8 @@ Severity levels:
 - DO NOT attempt any fixes
 - ONLY observe and report
 - ALWAYS check timestamps - ignore old errors
+- ALWAYS separate evidence, likely cause, and recommended action
+- ALWAYS prefer escalation over restart churn when config/image/dependency/infra signals are present
 - Record EVERYTHING to the database with the run_id
 - ALWAYS output the closing report
 

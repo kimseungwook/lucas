@@ -64,9 +64,21 @@ Just use kubectl like you normally would:
 kubectl get pods -n $TARGET_NAMESPACE -o wide
 kubectl describe pod <name> -n $TARGET_NAMESPACE
 kubectl logs <name> -n $TARGET_NAMESPACE --tail=100 --timestamps
+kubectl logs <name> -n $TARGET_NAMESPACE --previous --tail=100 --timestamps
+kubectl get events -n $TARGET_NAMESPACE --sort-by='.lastTimestamp'
 ```
 
 Look for the usual suspects: CrashLoopBackOff, OOMKilled, ImagePullBackOff, connection errors, etc.
+
+When a pod is dying or restarting, classify it into one primary bucket before proposing action:
+- `config_or_secret_failure`
+- `image_or_startup_failure`
+- `resource_or_probe_failure`
+- `dependency_connectivity_failure`
+- `infra_or_placement_failure`
+- `pod_local_transient_failure`
+
+Keep evidence, likely cause, and recommended action separate.
 
 ## RUNBOOKS
 
@@ -79,12 +91,16 @@ Glob pattern="**/*.md" path="/runbooks"
 - If runbook says escalate: don't fix, just report and ask
 - If no runbook found: report the issue and ask how to proceed
 
+For opaque workloads where source code is unavailable, use the `Pod Death Without Source Access` runbook first.
+
 ## FIXING THINGS
 
 - *Runbook exists*: Follow the documented fix, cite the runbook
 - *Easy fixes* (restart, bump resources): Ask for a quick okay, then do it
 - *Risky stuff* (deleting things, config changes): Explain what you want to do and why, get explicit approval
 - *No runbook & not sure?* Report what you see, ask for guidance
+
+If the issue points to config, image, dependency, or infra rather than a clearly isolated pod-local fault, prefer escalation over repeated restarts.
 
 After fixing something, verify it actually worked and let them know.
 
