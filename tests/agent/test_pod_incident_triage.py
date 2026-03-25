@@ -1,3 +1,4 @@
+import importlib
 import sys
 import unittest
 from pathlib import Path
@@ -10,6 +11,12 @@ from src.agent.main.pod_incident_triage import resolve_pod_incident_target_names
 
 
 class PodIncidentTriageTests(unittest.TestCase):
+    def test_top_level_import_works_for_cron_style_execution(self):
+        module = importlib.import_module("pod_incident_triage")
+
+        self.assertTrue(hasattr(module, "build_pod_incident_inputs"))
+        self.assertTrue(callable(module.build_pod_incident_inputs))
+
     def test_collects_phase_reason_restart_and_owner_for_failing_pod(self):
         result = build_pod_incident_inputs(
             namespace="payments",

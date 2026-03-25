@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import subprocess
 from typing import Any
 
-from src.agent.main.cluster_snapshot import _kubectl_base_command, _phase_key, _pod_reason, _reason_key, _severity_score, resolve_target_namespaces
+try:
+    from .cluster_snapshot import _kubectl_base_command, _phase_key, _pod_reason, _reason_key, _severity_score, resolve_target_namespaces
+except ImportError:
+    cluster_snapshot = importlib.import_module("cluster_snapshot")
+    _kubectl_base_command = cluster_snapshot._kubectl_base_command
+    _phase_key = cluster_snapshot._phase_key
+    _pod_reason = cluster_snapshot._pod_reason
+    _reason_key = cluster_snapshot._reason_key
+    _severity_score = cluster_snapshot._severity_score
+    resolve_target_namespaces = cluster_snapshot.resolve_target_namespaces
 
 
 def _run_kubectl_json(args: list[str]) -> dict[str, Any]:
