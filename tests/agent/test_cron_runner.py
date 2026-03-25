@@ -6,12 +6,12 @@ from types import ModuleType
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src/agent/main"))
 dotenv_stub = ModuleType("dotenv")
-dotenv_stub.load_dotenv = lambda *args, **kwargs: None
+setattr(dotenv_stub, "load_dotenv", lambda *args, **kwargs: None)
 sys.modules.setdefault("dotenv", dotenv_stub)
 
-import cron_runner
-from cron_runner import _load_last_run_time, build_stored_report_payload
-from report_utils import extract_report_payload, parse_run_report
+from src.agent.main import cron_runner
+from src.agent.main.cron_runner import _load_last_run_time, build_stored_report_payload
+from src.agent.main.report_utils import extract_report_payload, parse_run_report
 
 
 class CronRunnerTests(unittest.TestCase):
@@ -179,6 +179,38 @@ class CronRunnerTests(unittest.TestCase):
         parsed = parse_run_report(report)
         self.assertEqual(parsed["security_suspicion_summary"]["findings"], 1)
         self.assertEqual(parsed["security_suspicion_findings"][0]["type"], "security.suspicious_behavior")
+
+    def test_build_stored_report_payload_includes_pod_incident_fields(self):
+        report = build_stored_report_payload(
+            run_scope="payments",
+            run_id=45,
+            status="issues_found",
+            pod_count=2,
+            error_count=1,
+            fix_count=0,
+            summary="pod incident found",
+            details=[{"pod": "payments/api-123", "issue": "CrashLoopBackOff"}],
+            pods_with_restarts=1,
+            status_breakdown={"Running": 2},
+            reason_breakdown={"CrashLoopBackOff": 1},
+            top_problematic_pods=[{"namespace": "payments", "pod": "api-123", "phase": "Running", "reason": "CrashLoopBackOff", "restarts": 3}],
+            pod_incident={
+                "pod_incident_summary": {"findings": 1, "high": 1, "medium": 0, "evaluated_namespaces": 1},
+                "pod_incident_findings": [
+                    {
+                        "type": "runtime.pod_incident",
+                        "namespace": "payments",
+                        "severity": "high",
+                        "resource": "pod/api-123",
+                        "category": "config_or_secret_failure",
+                        "likely_cause": "Missing secret reference blocks startup.",
+                    }
+                ],
+            },
+        )
+        parsed = parse_run_report(report)
+        self.assertEqual(parsed["pod_incident_summary"]["findings"], 1)
+        self.assertEqual(parsed["pod_incident_findings"][0]["category"], "config_or_secret_failure")
 
 
 if __name__ == "__main__":

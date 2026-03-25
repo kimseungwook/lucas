@@ -46,6 +46,8 @@ def parse_run_report(report: str) -> dict[str, Any]:
         "redis_recovery_findings": [],
         "security_suspicion_summary": {},
         "security_suspicion_findings": [],
+        "pod_incident_summary": {},
+        "pod_incident_findings": [],
     }
 
     try:
@@ -77,6 +79,10 @@ def parse_run_report(report: str) -> dict[str, Any]:
         parsed["security_suspicion_summary"] = security_suspicion_summary if isinstance(security_suspicion_summary, dict) else {}
         security_suspicion_findings = payload.get("security_suspicion_findings") or []
         parsed["security_suspicion_findings"] = security_suspicion_findings if isinstance(security_suspicion_findings, list) else []
+        pod_incident_summary = payload.get("pod_incident_summary") or {}
+        parsed["pod_incident_summary"] = pod_incident_summary if isinstance(pod_incident_summary, dict) else {}
+        pod_incident_findings = payload.get("pod_incident_findings") or []
+        parsed["pod_incident_findings"] = pod_incident_findings if isinstance(pod_incident_findings, list) else []
         if not parsed["details"] and parsed["top_problematic_pods"]:
             parsed["details"] = [
                 {
@@ -102,6 +108,40 @@ def parse_run_report(report: str) -> dict[str, Any]:
     return parsed
 
 
+def merge_pod_incident_report(parsed_report: dict[str, Any], pod_incident: dict[str, Any] | None) -> dict[str, Any]:
+    merged = dict(parsed_report)
+    pod_incident = pod_incident or {}
+    pod_summary = pod_incident.get("pod_incident_summary") or {}
+    pod_findings = pod_incident.get("pod_incident_findings") or []
+    merged["pod_incident_summary"] = pod_summary if isinstance(pod_summary, dict) else {}
+    merged["pod_incident_findings"] = pod_findings if isinstance(pod_findings, list) else []
+
+    findings = merged["pod_incident_findings"] if isinstance(merged["pod_incident_findings"], list) else []
+    findings_count = int(merged["pod_incident_summary"].get("findings", len(findings)) or len(findings)) if isinstance(merged["pod_incident_summary"], dict) else len(findings)
+    if findings_count <= 0:
+        return merged
+
+    merged["status"] = "issues_found"
+    merged["error_count"] = max(int(merged.get("error_count", 0) or 0), findings_count)
+
+    details = merged.get("details")
+    if not isinstance(details, list) or not details:
+        merged["details"] = [
+            {
+                "pod": f"{item.get('namespace', '')}/{item.get('pod', '')}".strip("/") or str(item.get("resource") or "unknown-pod"),
+                "issue": f"{item.get('category', 'pod_incident')}: {item.get('likely_cause', '')}".strip(),
+            }
+            for item in findings[:3]
+            if isinstance(item, dict)
+        ]
+
+    summary = str(merged.get("summary") or "")
+    if not summary or merged.get("status") == "issues_found" and summary == "조치가 필요한 이슈가 발견되지 않았습니다.":
+        merged["summary"] = f"주의가 필요한 pod incident가 {findings_count}건 있습니다."
+
+    return merged
+
+
 def format_slack_scan_message(
     *,
     status: str,
@@ -121,6 +161,8 @@ def format_slack_scan_message(
     redis_recovery_findings: list[dict[str, Any]] | None = None,
     security_suspicion_summary: dict[str, int] | None = None,
     security_suspicion_findings: list[dict[str, Any]] | None = None,
+    pod_incident_summary: dict[str, int] | None = None,
+    pod_incident_findings: list[dict[str, Any]] | None = None,
 ) -> str:
     lines = [
         "*Lucas 정기 점검*",
@@ -253,6 +295,36 @@ def format_slack_scan_message(
                 line += f" severity={severity}"
             if likely_scenario:
                 line += f": {likely_scenario}"
+            lines.append(line[:300])
+
+    if pod_incident_summary:
+        lines.append("pod_incident_summary")
+        summary_parts = []
+        for key in ["findings", "high", "medium", "evaluated_namespaces"]:
+            if key in pod_incident_summary:
+                summary_parts.append(f"{key}={pod_incident_summary[key]}")
+        lines.append("- " + " ".join(summary_parts[:4]))
+
+    pod_incident_items = pod_incident_findings or []
+    if pod_incident_items:
+        lines.append("pod_incident_findings")
+        for item in pod_incident_items[:3]:
+            if not isinstance(item, dict):
+                continue
+            finding_type = str(item.get("type") or "runtime.pod_incident")
+            namespace_name = str(item.get("namespace") or "")
+            severity = str(item.get("severity") or "")
+            category = str(item.get("category") or "")
+            likely_cause = str(item.get("likely_cause") or "")
+            line = f"- {finding_type}"
+            if namespace_name:
+                line += f" @ {namespace_name}"
+            if severity:
+                line += f" severity={severity}"
+            if category:
+                line += f" category={category}"
+            if likely_cause:
+                line += f": {likely_cause}"
             lines.append(line[:300])
 
     clean_summary = _sanitize_summary(summary)

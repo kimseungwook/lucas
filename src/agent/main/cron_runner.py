@@ -11,6 +11,7 @@ from typing import Any, cast
 try:
     from .cluster_snapshot import build_multi_namespace_snapshot, build_namespace_snapshot, resolve_target_namespaces, summarize_cluster_overview
     from .drift_auditor import build_drift_audit_result, collect_runtime_drift_inputs
+    from .pod_incident_triage import collect_pod_incident_inputs, resolve_pod_incident_target_namespaces
     from .redis_recovery import build_redis_recovery_result, collect_redis_recovery_inputs
     from .security_signal_collection import collect_security_signal_inputs
     from .security_compensating_control import build_security_suspicion_result
@@ -21,6 +22,7 @@ try:
 except ImportError:
     cluster_snapshot = importlib.import_module("cluster_snapshot")
     drift_auditor = importlib.import_module("drift_auditor")
+    pod_incident_triage = importlib.import_module("pod_incident_triage")
     redis_recovery = importlib.import_module("redis_recovery")
     security_signal_collection = importlib.import_module("security_signal_collection")
     security_compensating_control = importlib.import_module("security_compensating_control")
@@ -36,6 +38,9 @@ except ImportError:
 
     build_drift_audit_result = drift_auditor.build_drift_audit_result
     collect_runtime_drift_inputs = drift_auditor.collect_runtime_drift_inputs
+
+    collect_pod_incident_inputs = pod_incident_triage.collect_pod_incident_inputs
+    resolve_pod_incident_target_namespaces = pod_incident_triage.resolve_pod_incident_target_namespaces
 
     build_redis_recovery_result = redis_recovery.build_redis_recovery_result
     collect_redis_recovery_inputs = redis_recovery.collect_redis_recovery_inputs
@@ -132,10 +137,12 @@ def build_stored_report_payload(
     drift_audit: dict[str, Any] | None = None,
     redis_recovery: dict[str, Any] | None = None,
     security_suspicion: dict[str, Any] | None = None,
+    pod_incident: dict[str, Any] | None = None,
 ) -> str:
     drift_audit = drift_audit or {"drift_summary": {}, "drifts": []}
     redis_recovery = redis_recovery or {"redis_recovery_summary": {}, "redis_recovery_findings": []}
     security_suspicion = security_suspicion or {"security_suspicion_summary": {}, "security_suspicion_findings": []}
+    pod_incident = pod_incident or {"pod_incident_summary": {}, "pod_incident_findings": []}
     return json.dumps(
         {
             "scope": run_scope,
@@ -158,9 +165,49 @@ def build_stored_report_payload(
             "redis_recovery_findings": redis_recovery.get("redis_recovery_findings", []),
             "security_suspicion_summary": security_suspicion.get("security_suspicion_summary", {}),
             "security_suspicion_findings": security_suspicion.get("security_suspicion_findings", []),
+            "pod_incident_summary": pod_incident.get("pod_incident_summary", {}),
+            "pod_incident_findings": pod_incident.get("pod_incident_findings", []),
         },
         ensure_ascii=False,
     )
+
+
+def collect_pod_incident_report(namespaces: list[str]) -> dict[str, Any]:
+    configured_namespaces = set(resolve_pod_incident_target_namespaces())
+    selected_namespaces = [namespace for namespace in namespaces if namespace in configured_namespaces]
+    if not selected_namespaces:
+        return {"pod_incident_summary": {}, "pod_incident_findings": []}
+
+    findings: list[dict[str, Any]] = []
+    for namespace in selected_namespaces:
+        try:
+            result = collect_pod_incident_inputs(namespace)
+        except Exception as exc:
+            logger.warning("Pod incident triage skipped for namespace %s: %s", namespace, exc)
+            continue
+        raw_findings = result.get("incidents", []) if isinstance(result, dict) else []
+        for item in raw_findings:
+            if isinstance(item, dict):
+                item.setdefault("namespace", namespace)
+                findings.append(item)
+
+    if not findings:
+        return {
+            "pod_incident_summary": {"findings": 0, "high": 0, "medium": 0, "evaluated_namespaces": len(selected_namespaces)},
+            "pod_incident_findings": [],
+        }
+
+    high = sum(1 for item in findings if str(item.get("severity", "")) == "high")
+    medium = sum(1 for item in findings if str(item.get("severity", "")) == "medium")
+    return {
+        "pod_incident_summary": {
+            "findings": len(findings),
+            "high": high,
+            "medium": medium,
+            "evaluated_namespaces": len(selected_namespaces),
+        },
+        "pod_incident_findings": findings,
+    }
 
 
 async def main() -> None:
@@ -286,6 +333,12 @@ async def main() -> None:
         security_suspicion_summary: dict[str, Any] = raw_security_summary if isinstance(raw_security_summary, dict) else {}
         security_suspicion_findings: list[Any] = list(raw_security_findings) if isinstance(raw_security_findings, list) else []
 
+        pod_incident = collect_pod_incident_report(target_namespaces)
+        raw_pod_incident_summary = pod_incident.get("pod_incident_summary", {}) if isinstance(pod_incident, dict) else {}
+        raw_pod_incident_findings = pod_incident.get("pod_incident_findings", []) if isinstance(pod_incident, dict) else []
+        pod_incident_summary: dict[str, Any] = raw_pod_incident_summary if isinstance(raw_pod_incident_summary, dict) else {}
+        pod_incident_findings: list[Any] = list(raw_pod_incident_findings) if isinstance(raw_pod_incident_findings, list) else []
+
         if config.backend == "openai-compatible":
             snapshot = build_multi_namespace_snapshot(target_namespaces) if len(target_namespaces) > 1 else build_namespace_snapshot(target_namespace)
             prompt = (
@@ -335,6 +388,7 @@ async def main() -> None:
                 drift_audit=cast(dict[str, Any], drift_audit),
                 redis_recovery=cast(dict[str, Any], redis_recovery),
                 security_suspicion=cast(dict[str, Any], security_suspicion),
+                pod_incident=cast(dict[str, Any], pod_incident),
             )
             full_log = report
             result = {"input_tokens": 0, "output_tokens": 0, "model": config.model, "cost": 0.0}
@@ -374,6 +428,12 @@ async def main() -> None:
                 security_suspicion_summary = parsed_security_summary
             if isinstance(parsed_security_findings, list) and parsed_security_findings:
                 security_suspicion_findings = list(parsed_security_findings)
+            parsed_pod_incident_summary = parsed_report.get("pod_incident_summary")
+            parsed_pod_incident_findings = parsed_report.get("pod_incident_findings")
+            if isinstance(parsed_pod_incident_summary, dict) and parsed_pod_incident_summary:
+                pod_incident_summary = parsed_pod_incident_summary
+            if isinstance(parsed_pod_incident_findings, list) and parsed_pod_incident_findings:
+                pod_incident_findings = list(parsed_pod_incident_findings)
 
         if cluster_overview is not None and config.backend != "openai-compatible":
             pod_count = cluster_overview["pod_count"]
@@ -422,6 +482,8 @@ async def main() -> None:
         redis_recovery_findings = redis_recovery_findings if isinstance(redis_recovery_findings, list) else []
         security_suspicion_summary = security_suspicion_summary if isinstance(security_suspicion_summary, dict) else {}
         security_suspicion_findings = security_suspicion_findings if isinstance(security_suspicion_findings, list) else []
+        pod_incident_summary = pod_incident_summary if isinstance(pod_incident_summary, dict) else {}
+        pod_incident_findings = pod_incident_findings if isinstance(pod_incident_findings, list) else []
 
         report = build_stored_report_payload(
             run_scope=run_scope,
@@ -439,6 +501,7 @@ async def main() -> None:
             drift_audit={"drift_summary": drift_summary, "drifts": drifts},
             redis_recovery={"redis_recovery_summary": redis_recovery_summary, "redis_recovery_findings": redis_recovery_findings},
             security_suspicion={"security_suspicion_summary": security_suspicion_summary, "security_suspicion_findings": security_suspicion_findings},
+            pod_incident={"pod_incident_summary": pod_incident_summary, "pod_incident_findings": pod_incident_findings},
         )
 
         cost = result.get("cost", 0.0)
@@ -497,6 +560,8 @@ async def main() -> None:
                 redis_recovery_findings=cast(list[dict[str, Any]], redis_recovery_findings),
                 security_suspicion_summary=cast(dict[str, int], security_suspicion_summary),
                 security_suspicion_findings=cast(list[dict[str, Any]], security_suspicion_findings),
+                pod_incident_summary=cast(dict[str, int], pod_incident_summary),
+                pod_incident_findings=cast(list[dict[str, Any]], pod_incident_findings),
             )
         )
         logger.info("Run #%s completed with status=%s", run_id, status)
