@@ -32,9 +32,13 @@ This section defines the work required to evolve Lucas from a Claude-specific ru
 - `current-platform-state.md`: cross-cutting technical summary of the implemented workstreams and current platform shape.
 - `prod-transition.md`: production-transition policy, env-file workflow, and dev/prod rollout boundaries.
 - `gemini-flash-dev-backend.md`: draft proposal for adding Gemini Flash as a development-only backend candidate.
+- `prd-oci-waf-lb-monitoring.md`: product goals, scope, and acceptance criteria for read-only OCI WAF/LB monitoring.
+- `trd-oci-waf-lb-monitoring.md`: technical design for SDK-based OCI WAF/LB signal collection and classification.
+- `implementation-plan-oci-waf-lb-monitoring.md`: execution plan for the first read-only scheduled OCI WAF/LB monitoring release.
 - OpenRouter provider support is documented in the provider-agnostic backend docs.
 - Drift-auditor design is the next operations-hardening track.
+- OCI WAF/LB monitoring is the first edge-security monitoring track.
 
 ## Intended use
 
-Read the PRD first to align on problem and scope. Use the TRD to implement the architecture. Use the implementation and QA documents to sequence work and verify release readiness. Use `current-platform-state.md` when you need a single technical summary of where the platform stands today. Use the drift-auditor specs, Redis self-recovery specs, and Postgres migration specs as the next design tracks for Kubernetes operations hardening.
+Read the PRD first to align on problem and scope. Use the TRD to implement the architecture. Use the implementation and QA documents to sequence work and verify release readiness. Use `current-platform-state.md` when you need a single technical summary of where the platform stands today. Use the drift-auditor specs, Redis self-recovery specs, Postgres migration specs, and OCI WAF/LB monitoring specs as the next design tracks for Kubernetes operations hardening and edge security.
