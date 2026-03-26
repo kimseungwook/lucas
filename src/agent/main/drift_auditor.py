@@ -40,6 +40,15 @@ def _run_kubectl_json(args: list[str]) -> dict[str, Any]:
     return json.loads(result.stdout)
 
 
+def _safe_run_kubectl_json(args: list[str], resource: str, input_errors: list[str], default: dict[str, Any] | None = None) -> dict[str, Any]:
+    try:
+        return _run_kubectl_json(args)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or str(exc)).strip()
+        input_errors.append(f"{resource}: {detail}")
+        return default or {}
+
+
 def _serviceaccount_namespace() -> str:
     namespace_file = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
     if namespace_file.exists():
@@ -186,10 +195,28 @@ def build_drift_audit_result(
     pvs: list[dict[str, Any]] | None = None,
     nodes: dict[str, dict[str, Any]] | None = None,
     configmaps: dict[str, dict[str, str]] | None = None,
+    input_errors: list[str] | None = None,
 ) -> DriftAuditResult:
     del pvs, nodes
     findings: list[DriftFinding] = []
     summary = {"storage": 0, "code": 0, "runtime": 0}
+
+    if input_errors:
+        severity = "high" if any("forbidden" in item.lower() or "not found" in item.lower() for item in input_errors) else "medium"
+        findings.append(
+            {
+                "type": "runtime.input_collection_failed",
+                "severity": severity,
+                "resource": "runtime-drift-inputs",
+                "evidence": list(input_errors[:5]),
+                "likely_cause": "The drift auditor could not collect all of the runtime inputs it needs, usually because of RBAC gaps or missing runtime resources.",
+                "recommended_actions": [
+                    "Verify the Lucas service account can read the runtime resources the drift auditor expects.",
+                    "Verify the expected deployment, cronjob, PVC, and ConfigMap objects exist in the target namespace.",
+                ],
+            }
+        )
+        summary["runtime"] += 1
 
     selected_nodes = _selected_nodes(pvcs)
     deployment_node = deployment_pod.get("spec", {}).get("nodeName") if deployment_pod else None
@@ -333,11 +360,12 @@ def build_drift_audit_result(
 
 def collect_runtime_drift_inputs(namespace: str | None = None, deployment_name: str = "a2w-lucas-agent", cronjob_name: str = "a2w-lucas") -> dict[str, Any]:
     namespace = namespace or _serviceaccount_namespace()
+    input_errors: list[str] = []
 
-    deployment = _run_kubectl_json(["-n", namespace, "get", "deployment", deployment_name, "-o", "json"])
-    cronjob = _run_kubectl_json(["-n", namespace, "get", "cronjob", cronjob_name, "-o", "json"])
+    deployment = _safe_run_kubectl_json(["-n", namespace, "get", "deployment", deployment_name, "-o", "json"], f"deployment/{deployment_name}", input_errors)
+    cronjob = _safe_run_kubectl_json(["-n", namespace, "get", "cronjob", cronjob_name, "-o", "json"], f"cronjob/{cronjob_name}", input_errors)
 
-    pods_payload = _run_kubectl_json(["-n", namespace, "get", "pods", "-o", "json"])
+    pods_payload = _safe_run_kubectl_json(["-n", namespace, "get", "pods", "-o", "json"], "pods", input_errors, {"items": []})
     deployment_pod = None
     cronjob_pod = None
     for item in pods_payload.get("items", []):
@@ -347,7 +375,7 @@ def collect_runtime_drift_inputs(namespace: str | None = None, deployment_name: 
         elif name.startswith(f"{cronjob_name}-"):
             cronjob_pod = item
 
-    events_payload = _run_kubectl_json(["-n", namespace, "get", "events", "-o", "json"])
+    events_payload = _safe_run_kubectl_json(["-n", namespace, "get", "events", "-o", "json"], "events", input_errors, {"items": []})
     event_items = events_payload.get("items", [])
 
     def matching_events(pod: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -356,19 +384,19 @@ def collect_runtime_drift_inputs(namespace: str | None = None, deployment_name: 
         pod_name = pod.get("metadata", {}).get("name")
         return [item for item in event_items if item.get("involvedObject", {}).get("name") == pod_name]
 
-    pvc_payload = _run_kubectl_json(["-n", namespace, "get", "pvc", "-o", "json"])
+    pvc_payload = _safe_run_kubectl_json(["-n", namespace, "get", "pvc", "-o", "json"], "pvc", input_errors, {"items": []})
 
     configmaps: dict[str, dict[str, str]] = {}
     for volume in deployment.get("spec", {}).get("template", {}).get("spec", {}).get("volumes", []):
         configmap = volume.get("configMap", {})
         name = configmap.get("name")
         if name and name not in configmaps:
-            configmaps[name] = _run_kubectl_json(["-n", namespace, "get", "configmap", name, "-o", "json"]).get("data", {})
+            configmaps[name] = _safe_run_kubectl_json(["-n", namespace, "get", "configmap", name, "-o", "json"], f"configmap/{name}", input_errors, {"data": {}}).get("data", {})
     for volume in cronjob.get("spec", {}).get("jobTemplate", {}).get("spec", {}).get("template", {}).get("spec", {}).get("volumes", []):
         configmap = volume.get("configMap", {})
         name = configmap.get("name")
         if name and name not in configmaps:
-            configmaps[name] = _run_kubectl_json(["-n", namespace, "get", "configmap", name, "-o", "json"]).get("data", {})
+            configmaps[name] = _safe_run_kubectl_json(["-n", namespace, "get", "configmap", name, "-o", "json"], f"configmap/{name}", input_errors, {"data": {}}).get("data", {})
 
     return {
         "deployment": deployment,
@@ -379,4 +407,5 @@ def collect_runtime_drift_inputs(namespace: str | None = None, deployment_name: 
         "cronjob_events": matching_events(cronjob_pod),
         "pvcs": pvc_payload.get("items", []),
         "configmaps": configmaps,
+        "input_errors": input_errors,
     }

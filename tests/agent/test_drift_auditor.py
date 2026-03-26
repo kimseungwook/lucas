@@ -1,13 +1,39 @@
 import sys
 import unittest
+from subprocess import CalledProcessError
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src/agent/main"))
 
-from drift_auditor import build_drift_audit_result
+from drift_auditor import build_drift_audit_result, collect_runtime_drift_inputs
 
 
 class DriftAuditorTests(unittest.TestCase):
+    def test_records_input_collection_failures_as_runtime_drift(self):
+        result = build_drift_audit_result(input_errors=["cronjob/a2w-lucas: forbidden: cannot get resource cronjobs.batch"])
+        self.assertEqual(result["status"], "issues_found")
+        self.assertEqual(result["drift_summary"]["runtime"], 1)
+        self.assertEqual(result["drifts"][0]["type"], "runtime.input_collection_failed")
+
+    def test_collect_runtime_drift_inputs_does_not_raise_when_cronjob_read_fails(self):
+        def fake_run(args):
+            joined = " ".join(args)
+            if "get deployment" in joined:
+                return {"spec": {"template": {"spec": {"containers": [{"env": []}]}}}}
+            if "get cronjob" in joined:
+                raise CalledProcessError(1, args, stderr='Error from server (Forbidden): cronjobs.batch "a2w-lucas" is forbidden')
+            if "get pods" in joined or "get events" in joined or "get pvc" in joined:
+                return {"items": []}
+            raise AssertionError(joined)
+
+        with patch("drift_auditor._run_kubectl_json", side_effect=fake_run):
+            inputs = collect_runtime_drift_inputs(namespace="lucas")
+
+        self.assertIn("input_errors", inputs)
+        self.assertEqual(len(inputs["input_errors"]), 1)
+        self.assertIn("cronjob/a2w-lucas", inputs["input_errors"][0])
+
     def test_detects_storage_node_placement_mismatch(self):
         result = build_drift_audit_result(
             deployment_pod={"spec": {"nodeName": "10.130.115.253"}},
