@@ -33,6 +33,8 @@ type PageData struct {
 	TokenUsage    []db.TokenUsage
 	CostStats     *db.CostStats
 	Runbooks      []Runbook
+	AnomalyFilter string
+	AnomalyCounts db.AnomalyCounts
 }
 
 type Runbook struct {
@@ -46,6 +48,7 @@ type Runbook struct {
 func (h *Handler) Index(w http.ResponseWriter, r *http.Request) {
 	namespace := r.URL.Query().Get("ns")
 	runIDStr := r.URL.Query().Get("run")
+	anomalyFilter := r.URL.Query().Get("anomaly")
 
 	namespaces, _ := h.db.GetNamespaces()
 
@@ -55,6 +58,8 @@ func (h *Handler) Index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	runs, _ := h.db.GetRuns(namespace, 50)
+	anomalyCounts := db.GetAnomalyCounts(runs)
+	runs = db.FilterRunsByAnomaly(runs, anomalyFilter)
 
 	var selectedRun *db.Run
 	var selectedFixes []db.Fix
@@ -86,6 +91,8 @@ func (h *Handler) Index(w http.ResponseWriter, r *http.Request) {
 		SelectedRun:   selectedRun,
 		SelectedFixes: selectedFixes,
 		Stats:         stats,
+		AnomalyFilter: anomalyFilter,
+		AnomalyCounts: anomalyCounts,
 	}
 
 	err := h.tmpl.ExecuteTemplate(w, "index.html", data)
@@ -187,12 +194,17 @@ func (h *Handler) RunbooksPage(w http.ResponseWriter, r *http.Request) {
 // HTMX partials
 func (h *Handler) RunsList(w http.ResponseWriter, r *http.Request) {
 	namespace := r.URL.Query().Get("ns")
+	anomalyFilter := r.URL.Query().Get("anomaly")
 	runs, _ := h.db.GetRuns(namespace, 50)
+	anomalyCounts := db.GetAnomalyCounts(runs)
+	runs = db.FilterRunsByAnomaly(runs, anomalyFilter)
 
 	data := struct {
-		Runs      []db.Run
-		CurrentNS string
-	}{runs, namespace}
+		Runs          []db.Run
+		CurrentNS     string
+		AnomalyFilter string
+		AnomalyCounts db.AnomalyCounts
+	}{runs, namespace, anomalyFilter, anomalyCounts}
 
 	h.tmpl.ExecuteTemplate(w, "runs-list.html", data)
 }

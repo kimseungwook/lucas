@@ -1,47 +1,75 @@
 {{define "runs-list.html"}}
+<div class="p-2 border-b border-neutral-200 bg-neutral-50 flex flex-wrap gap-1 text-xs">
+    <a href="/?ns={{.CurrentNS}}&anomaly=all" class="px-2 py-1 rounded {{if or (eq .AnomalyFilter "all") (eq .AnomalyFilter "")}}bg-blue-100 text-blue-700 font-medium{{else}}bg-neutral-200 text-neutral-600 hover:bg-neutral-300{{end}}">
+        All ({{.AnomalyCounts.TotalRuns}})
+    </a>
+    <a href="/?ns={{.CurrentNS}}&anomaly=incidents" class="px-2 py-1 rounded {{if eq .AnomalyFilter "incidents"}}bg-red-100 text-red-700 font-medium{{else}}bg-neutral-200 text-neutral-600 hover:bg-neutral-300{{end}}">
+        Incidents ({{.AnomalyCounts.Incidents}})
+    </a>
+    <a href="/?ns={{.CurrentNS}}&anomaly=drift" class="px-2 py-1 rounded {{if eq .AnomalyFilter "drift"}}bg-amber-100 text-amber-700 font-medium{{else}}bg-neutral-200 text-neutral-600 hover:bg-neutral-300{{end}}">
+        Drift ({{.AnomalyCounts.Drift}})
+    </a>
+    <a href="/?ns={{.CurrentNS}}&anomaly=redis" class="px-2 py-1 rounded {{if eq .AnomalyFilter "redis"}}bg-purple-100 text-purple-700 font-medium{{else}}bg-neutral-200 text-neutral-600 hover:bg-neutral-300{{end}}">
+        Redis ({{.AnomalyCounts.Redis}})
+    </a>
+    <a href="/?ns={{.CurrentNS}}&anomaly=security" class="px-2 py-1 rounded {{if eq .AnomalyFilter "security"}}bg-orange-100 text-orange-700 font-medium{{else}}bg-neutral-200 text-neutral-600 hover:bg-neutral-300{{end}}">
+        Security ({{.AnomalyCounts.Security}})
+    </a>
+</div>
+
 {{if .Runs}}
 <div class="divide-y divide-neutral-200">
     {{range .Runs}}
-    <a href="/?ns={{.Namespace}}&run={{.ID}}"
+    <a href="/?ns={{$.CurrentNS}}&run={{.ID}}&anomaly={{$.AnomalyFilter}}"
        class="block px-3 py-3 hover:bg-neutral-100 transition-colors">
         <div class="flex items-center justify-between mb-1">
-            <span class="text-sm font-medium text-neutral-900">
+            <span class="text-sm font-medium text-neutral-900 truncate pr-2">
                 {{if .SummaryOnly}}
-                Summary of run #{{.ParentRunID}}
+                Summary #{{.ParentRunID}}
                 {{else}}
                 Run #{{.ID}}
                 {{end}}
             </span>
             {{if eq .Status "ok"}}
-            <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
+            <span class="w-2 h-2 flex-shrink-0 bg-emerald-500 rounded-full"></span>
             {{else if eq .Status "fixed"}}
-            <span class="w-2 h-2 bg-amber-500 rounded-full"></span>
+            <span class="w-2 h-2 flex-shrink-0 bg-amber-500 rounded-full"></span>
             {{else if eq .Status "failed"}}
-            <span class="w-2 h-2 bg-red-500 rounded-full"></span>
+            <span class="w-2 h-2 flex-shrink-0 bg-red-500 rounded-full"></span>
             {{else if eq .Status "issues_found"}}
-            <span class="w-2 h-2 bg-orange-500 rounded-full"></span>
+            <span class="w-2 h-2 flex-shrink-0 bg-orange-500 rounded-full"></span>
             {{else}}
-            <span class="w-2 h-2 bg-neutral-400 rounded-full"></span>
+            <span class="w-2 h-2 flex-shrink-0 bg-neutral-400 rounded-full"></span>
             {{end}}
         </div>
-        <div class="text-xs text-neutral-500">
+        <div class="text-xs text-neutral-500 mb-1">
             {{.StartedAt}}
         </div>
-        <div class="flex items-center gap-2 mt-1 text-xs">
+        <div class="flex items-center gap-2 text-xs mb-1">
             <span class="text-neutral-500">{{if .SummaryOnly}}summary{{else}}{{.Mode}}{{end}}</span>
             {{if gt .ErrorCount 0}}
-            <span class="text-red-600">{{.ErrorCount}} errors</span>
+            <span class="text-red-600">{{.ErrorCount}} errs</span>
             {{end}}
             {{if gt .FixCount 0}}
             <span class="text-emerald-600">{{.FixCount}} fixed</span>
             {{end}}
         </div>
+        
+        {{$anomalies := .ParseAnomalies}}
+        {{if or $anomalies.HasIncidents $anomalies.HasDrift $anomalies.HasRedis $anomalies.HasSecurity}}
+        <div class="flex flex-wrap gap-1 mt-1">
+            {{if $anomalies.HasIncidents}}<span class="px-1.5 py-0.5 bg-red-50 text-red-600 rounded text-[10px] font-medium border border-red-100">Incident</span>{{end}}
+            {{if $anomalies.HasDrift}}<span class="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded text-[10px] font-medium border border-amber-100">Drift</span>{{end}}
+            {{if $anomalies.HasRedis}}<span class="px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded text-[10px] font-medium border border-purple-100">Redis</span>{{end}}
+            {{if $anomalies.HasSecurity}}<span class="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded text-[10px] font-medium border border-orange-100">Security</span>{{end}}
+        </div>
+        {{end}}
     </a>
     {{end}}
 </div>
 {{else}}
 <div class="p-4 text-center text-neutral-500 text-sm">
-    No runs yet
+    No runs match filter
 </div>
 {{end}}
 {{end}}

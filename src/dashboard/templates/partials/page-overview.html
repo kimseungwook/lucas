@@ -6,7 +6,7 @@
             <h2 class="text-xs font-semibold uppercase tracking-wider text-neutral-500">Runs</h2>
         </div>
         <div id="runs-list" class="flex-1 overflow-y-auto scrollbar-thin"
-             hx-get="/partials/runs?ns={{.CurrentNS}}"
+             hx-get="/partials/runs?ns={{.CurrentNS}}&anomaly={{.AnomalyFilter}}"
              hx-trigger="every 30s">
             {{template "runs-list.html" .}}
         </div>

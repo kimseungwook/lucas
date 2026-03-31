@@ -54,7 +54,67 @@
         </div>
     </div>
 
+
+    <!-- Anomaly Summary -->
+    {{$anomalies := .Run.ParseAnomalies}}
+    {{if or $anomalies.HasIncidents $anomalies.HasDrift $anomalies.HasRedis $anomalies.HasSecurity}}
+    <div class="mb-6 space-y-4">
+        {{if $anomalies.HasIncidents}}
+        <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+            <h3 class="text-sm font-bold text-red-800 mb-2 flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation"></i> Pod Incidents Detected
+            </h3>
+            <ul class="list-disc pl-5 text-sm text-red-700 space-y-1">
+                {{range $anomalies.Incidents}}
+                <li>{{.}}</li>
+                {{end}}
+            </ul>
+        </div>
+        {{end}}
+
+        {{if $anomalies.HasDrift}}
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <h3 class="text-sm font-bold text-amber-800 mb-2 flex items-center gap-2">
+                <i class="fa-solid fa-code-compare"></i> Configuration Drift
+            </h3>
+            <ul class="list-disc pl-5 text-sm text-amber-700 space-y-1">
+                {{range $anomalies.Drifts}}
+                <li>{{.}}</li>
+                {{end}}
+            </ul>
+        </div>
+        {{end}}
+
+        {{if $anomalies.HasRedis}}
+        <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+            <h3 class="text-sm font-bold text-purple-800 mb-2 flex items-center gap-2">
+                <i class="fa-solid fa-database"></i> Redis Recovery Findings
+            </h3>
+            <ul class="list-disc pl-5 text-sm text-purple-700 space-y-1">
+                {{range $anomalies.Redis}}
+                <li>{{.}}</li>
+                {{end}}
+            </ul>
+        </div>
+        {{end}}
+
+        {{if $anomalies.HasSecurity}}
+        <div class="bg-orange-50 border border-orange-200 rounded-lg p-4">
+            <h3 class="text-sm font-bold text-orange-800 mb-2 flex items-center gap-2">
+                <i class="fa-solid fa-shield-halved"></i> Security Suspicion
+            </h3>
+            <ul class="list-disc pl-5 text-sm text-orange-700 space-y-1">
+                {{range $anomalies.Security}}
+                <li>{{.}}</li>
+                {{end}}
+            </ul>
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+
     <!-- Report -->
+
     {{if .Run.Report}}
     <div class="mb-6">
         <h2 class="text-sm font-semibold uppercase tracking-wider text-neutral-500 mb-3">Report</h2>
