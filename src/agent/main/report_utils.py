@@ -28,6 +28,12 @@ def _sanitize_summary(summary: str) -> str:
     return compact[:300]
 
 
+def prepare_report_for_storage(report: str | None) -> str | None:
+    if not report:
+        return None
+    return report
+
+
 def parse_run_report(report: str) -> dict[str, Any]:
     parsed: dict[str, Any] = {
         "pod_count": 0,

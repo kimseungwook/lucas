@@ -201,6 +201,50 @@ For scheduled scans:
 - The LLM may help with wording only.
 - The LLM must not be the source of truth for pod state classification in all-namespace scans.
 
+## Dashboard Presentation Contract
+
+The dashboard run detail screen should treat the persisted report as two separate operator views:
+
+1. Summary and anomaly category cards for high-level context.
+2. A pod-centric action list for immediate triage.
+
+### Pods Requiring Attention
+
+Add a dedicated `Pods Requiring Attention` section to the run detail screen with these rules:
+
+- Render the section below anomaly summary cards and above the raw report block.
+- Render only when at least one pod-centric attention item exists.
+- Normalize report sources into a single dashboard view model instead of branching in templates.
+- Show up to 5 items initially and indicate when additional items exist.
+- Keep drift, security, and redis findings in their existing anomaly cards unless they clearly identify a specific pod.
+
+### Attention item normalization
+
+The dashboard should normalize these sources in priority order:
+
+1. `top_problematic_pods`
+2. `details`
+3. `pod_incident_findings` when a pod/resource target can be identified
+
+Each normalized attention item should preserve as much of the following as available:
+
+- namespace
+- pod
+- phase
+- reason
+- issue
+- severity
+- restarts
+- recommendation or likely cause
+- source
+
+Normalization rules:
+
+- Deduplicate primarily by `namespace + pod`.
+- Merge richer fields from multiple sources for the same pod.
+- Prefer higher severity and higher restart counts when merging.
+- Sort by severity descending, restart count descending, then name.
+
 ## Affected Components
 
 - `src/agent/main/cluster_snapshot.py`
@@ -208,8 +252,9 @@ For scheduled scans:
 - `src/agent/main/cron_runner.py`
 - `src/agent/main/main.py` if scheduled callback formatting is kept aligned
 - `src/agent/main/sessions.py`
+- `src/dashboard/db/anomalies.go`
 - `src/dashboard/handlers/handlers.go`
-- dashboard run detail and run list templates
+- `src/dashboard/templates/partials/run-detail.html`
 
 ## Acceptance Criteria
 
@@ -218,6 +263,8 @@ For scheduled scans:
 - Slack output leads with status breakdown rather than issue count.
 - Existing dashboard counters still render.
 - Additional incident sections remain additive and do not break existing consumers.
+- The dashboard renders a pod-centric `Pods Requiring Attention` section when pod attention items are present.
+- The dashboard does not mix non-pod drift/security-only findings into the pod attention list.
 - Report payload remains within current storage limits.
 
 ## QA Plan

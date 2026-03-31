@@ -21,6 +21,7 @@ Scheduled scan output can now include bounded pod-incident triage findings when 
 - Development and production now both use Postgres as the primary runtime store for new runs.
 - The target state is Postgres as the single source of truth for runs, fixes, token usage, slack sessions, recovery actions, and run summaries.
 - `SQLITE_PATH` may still remain present as a compatibility path during transition cleanup, but it is no longer the intended primary runtime store.
+- The live production agent and cronjob no longer mount the shared `lucas-data` PVC; they now use `/tmp/lucas.db` only as a local compatibility path while Postgres remains the source of truth.
 
 ## Postgres migration direction
 

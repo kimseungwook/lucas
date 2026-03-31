@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: a2w-lucas
-  namespace: a2w-lucas
+  namespace: lucas
 spec:
   schedule: "*/10 * * * *"
   concurrencyPolicy: Forbid  # Don't run if previous job still running
@@ -18,18 +18,9 @@ spec:
           restartPolicy: Never
           imagePullSecrets:
             - name: harbor-creds
-          initContainers:
-            - name: fix-permissions
-              image: busybox
-              command: ["sh", "-c", "chmod -R 777 /data"]
-              volumeMounts:
-                - name: data
-                  mountPath: /data
-              securityContext:
-                runAsUser: 0
           containers:
             - name: lucas
-              image: gdhb.goyoai.com/lukas/lucas:postgres-shadow
+              image: gdhb.goyoai.com/lukas/lucas:report-full-multi-20260331-182013
               imagePullPolicy: Always
               env:
                 - name: TARGET_NAMESPACE
@@ -39,7 +30,7 @@ spec:
                 - name: SRE_MODE
                   value: "report"
                 - name: SQLITE_PATH
-                  value: "/data/lucas.db"
+                  value: "/tmp/lucas.db"
                 - name: POSTGRES_HOST
                   value: "lucas-postgres"
                 - name: POSTGRES_PORT
@@ -91,9 +82,6 @@ spec:
                       name: slack-webhook
                       key: webhook-url
                       optional: true
-              volumeMounts:
-                - name: data
-                  mountPath: /data
               resources:
                 requests:
                   memory: "256Mi"
@@ -101,7 +89,3 @@ spec:
                 limits:
                   memory: "1Gi"
                   cpu: "500m"
-          volumes:
-            - name: data
-              persistentVolumeClaim:
-                claimName: lucas-data

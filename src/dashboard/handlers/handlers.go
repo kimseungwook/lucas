@@ -224,11 +224,20 @@ func (h *Handler) RunDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fixes, _ := h.db.GetFixesByRun(runID)
+	attentionItems := run.ParseAttentionItems()
+	attentionPreview := attentionItems
+	attentionHiddenCount := 0
+	if len(attentionPreview) > 5 {
+		attentionPreview = attentionPreview[:5]
+		attentionHiddenCount = len(attentionItems) - len(attentionPreview)
+	}
 
 	data := struct {
-		Run   *db.Run
-		Fixes []db.Fix
-	}{run, fixes}
+		Run                  *db.Run
+		Fixes                []db.Fix
+		AttentionItems       []db.AttentionItem
+		AttentionHiddenCount int
+	}{run, fixes, attentionPreview, attentionHiddenCount}
 
 	h.tmpl.ExecuteTemplate(w, "run-detail.html", data)
 }

@@ -24,7 +24,7 @@ try:
     from .cluster_snapshot import build_interactive_snapshot, build_namespace_snapshot
     from .llm import calculate_cost, create_backend, resolve_llm_config, validate_llm_config
     from .pod_incident_triage import collect_pod_incident_inputs, resolve_pod_incident_target_namespaces
-    from .report_utils import extract_report_payload, format_slack_scan_message, merge_pod_incident_report, parse_run_report
+    from .report_utils import extract_report_payload, format_slack_scan_message, merge_pod_incident_report, parse_run_report, prepare_report_for_storage
     from .slack_actions import (
         confirmation_accepted,
         confirmation_prompt,
@@ -61,6 +61,7 @@ except ImportError:
     format_slack_scan_message = report_utils.format_slack_scan_message
     merge_pod_incident_report = report_utils.merge_pod_incident_report
     parse_run_report = report_utils.parse_run_report
+    prepare_report_for_storage = report_utils.prepare_report_for_storage
 
     confirmation_accepted = slack_actions.confirmation_accepted
     confirmation_prompt = slack_actions.confirmation_prompt
@@ -731,7 +732,7 @@ At the end, provide a brief summary with counts: how many pods checked, how many
             pod_count=pod_count,
             error_count=error_count,
             fix_count=0,
-            report=report_text[:5000] if report_text else None,
+            report=prepare_report_for_storage(report_text),
             log=response[:10000] if response else None
         )
 

@@ -156,3 +156,115 @@ func TestGetAnomalyCounts(t *testing.T) {
 		t.Errorf("expected 0 security, got %v", counts.Security)
 	}
 }
+
+func TestParseAttentionItemsFromTopProblematicPods(t *testing.T) {
+	run := Run{Report: `{
+		"top_problematic_pods": [
+			{"namespace": "payments", "pod": "api-1", "phase": "Running", "reason": "CrashLoopBackOff", "restarts": 7},
+			{"namespace": "billing", "pod": "worker-1", "phase": "Pending", "reason": "ContainerCreating", "restarts": 0}
+		]
+	}`}
+
+	items := run.ParseAttentionItems()
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	if items[0].Namespace != "payments" || items[0].Pod != "api-1" {
+		t.Fatalf("expected first item to be payments/api-1, got %+v", items[0])
+	}
+	if items[0].Restarts != 7 || items[0].Reason != "CrashLoopBackOff" {
+		t.Fatalf("expected restarts/reason to be preserved, got %+v", items[0])
+	}
+}
+
+func TestParseAttentionItemsMergesDetailsAndIncidents(t *testing.T) {
+	run := Run{Report: `{
+		"top_problematic_pods": [
+			{"namespace": "payments", "pod": "api-1", "phase": "Running", "reason": "CrashLoopBackOff", "restarts": 7}
+		],
+		"details": [
+			{"pod": "payments/api-1", "issue": "CrashLoopBackOff", "severity": "medium", "recommendation": "Check env values"}
+		],
+		"pod_incident_findings": [
+			{"namespace": "payments", "pod": "api-1", "severity": "high", "category": "config_or_secret_failure", "likely_cause": "Missing secret blocks startup."}
+		]
+	}`}
+
+	items := run.ParseAttentionItems()
+	if len(items) != 1 {
+		t.Fatalf("expected 1 merged item, got %d", len(items))
+	}
+	item := items[0]
+	if item.Namespace != "payments" || item.Pod != "api-1" {
+		t.Fatalf("expected payments/api-1, got %+v", item)
+	}
+	if item.Severity != "high" {
+		t.Fatalf("expected merged severity high, got %+v", item)
+	}
+	if item.Restarts != 7 {
+		t.Fatalf("expected restarts=7, got %+v", item)
+	}
+	if item.Issue != "CrashLoopBackOff" {
+		t.Fatalf("expected issue to remain from details, got %+v", item)
+	}
+	if item.Recommendation != "Check env values" {
+		t.Fatalf("expected recommendation from details to be preserved, got %+v", item)
+	}
+}
+
+func TestParseAttentionItemsUsesIncidentResourceFallback(t *testing.T) {
+	run := Run{Report: `{
+		"pod_incident_findings": [
+			{"namespace": "payments", "resource": "pod/api-1", "severity": "high", "category": "image_or_startup_failure", "likely_cause": "Image pull failed."}
+		]
+	}`}
+
+	items := run.ParseAttentionItems()
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Pod != "api-1" || items[0].Namespace != "payments" {
+		t.Fatalf("expected payments/api-1 from resource fallback, got %+v", items[0])
+	}
+}
+
+func TestParseAttentionItemsIgnoresNonPodFindings(t *testing.T) {
+	run := Run{Report: `{
+		"drifts": [{"type": "runtime.config_mismatch", "resource": "deployment/api"}],
+		"security_suspicion_findings": [{"type": "security.suspicious_behavior", "resource": "deployment/api"}]
+	}`}
+
+	items := run.ParseAttentionItems()
+	if len(items) != 0 {
+		t.Fatalf("expected 0 attention items, got %+v", items)
+	}
+}
+
+func TestParseAttentionItemsSortsBySeverityThenRestarts(t *testing.T) {
+	run := Run{Report: `{
+		"details": [
+			{"pod": "ns/low-1", "issue": "minor", "severity": "low"},
+			{"pod": "ns/high-1", "issue": "major", "severity": "high"},
+			{"pod": "ns/high-2", "issue": "major", "severity": "high"}
+		],
+		"top_problematic_pods": [
+			{"namespace": "ns", "pod": "high-1", "restarts": 1},
+			{"namespace": "ns", "pod": "high-2", "restarts": 9},
+			{"namespace": "ns", "pod": "low-1", "restarts": 50}
+		]
+	}`}
+
+	items := run.ParseAttentionItems()
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(items))
+	}
+	if items[0].Pod != "high-2" {
+		t.Fatalf("expected high-2 first, got %+v", items)
+	}
+	if items[1].Pod != "high-1" {
+		t.Fatalf("expected high-1 second, got %+v", items)
+	}
+	if items[2].Pod != "low-1" {
+		t.Fatalf("expected low-1 last, got %+v", items)
+	}
+}

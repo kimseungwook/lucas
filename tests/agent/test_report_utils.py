@@ -4,10 +4,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src/agent/main"))
 
-from src.agent.main.report_utils import extract_report_payload, format_slack_scan_message, merge_pod_incident_report, parse_run_report
+from src.agent.main.report_utils import extract_report_payload, format_slack_scan_message, merge_pod_incident_report, parse_run_report, prepare_report_for_storage
 
 
 class ReportUtilsTests(unittest.TestCase):
+    def test_prepare_report_for_storage_preserves_full_json(self):
+        report = '{"top_problematic_pods": [' + ','.join('{"pod":"pod-%d"}' % i for i in range(800)) + ']}'
+        stored = prepare_report_for_storage(report)
+        self.assertEqual(stored, report)
+        self.assertGreater(len(stored), 5000)
+
     def test_extract_report_payload_reads_marked_json(self):
         report, full_log = extract_report_payload(
             'prefix\n===REPORT_START===\n{"pod_count": 2, "error_count": 1, "fix_count": 0, "status": "issues_found", "summary": "one issue", "details": []}\n===REPORT_END===\nsuffix'

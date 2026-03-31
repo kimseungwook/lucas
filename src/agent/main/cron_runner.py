@@ -17,7 +17,7 @@ try:
     from .security_compensating_control import build_security_suspicion_result
     from .run_summaries import build_namespace_summary_rows
     from .llm import calculate_cost, create_backend, resolve_llm_config, validate_llm_config
-    from .report_utils import extract_report_payload, format_slack_scan_message, parse_run_report
+    from .report_utils import extract_report_payload, format_slack_scan_message, parse_run_report, prepare_report_for_storage
     from .sessions import RunStore
 except ImportError:
     cluster_snapshot = importlib.import_module("cluster_snapshot")
@@ -57,6 +57,7 @@ except ImportError:
     extract_report_payload = report_utils.extract_report_payload
     format_slack_scan_message = report_utils.format_slack_scan_message
     parse_run_report = report_utils.parse_run_report
+    prepare_report_for_storage = report_utils.prepare_report_for_storage
 
     RunStore = sessions.RunStore
 
@@ -533,7 +534,7 @@ async def main() -> None:
             pod_count=pod_count,
             error_count=error_count,
             fix_count=fix_count,
-            report=report[:5000] if report else None,
+            report=prepare_report_for_storage(report),
             log=full_log[:100000] if full_log else None,
         )
 

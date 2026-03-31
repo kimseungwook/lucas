@@ -155,26 +155,26 @@ Secret references:
 Workload:
 
 - Kubernetes object: `Deployment/a2w-lucas-agent`
-- Image: `gdhb.goyoai.com/lukas/lucas-agent:postgres-shadow`
+- Image: `gdhb.goyoai.com/lukas/lucas-agent:report-full-multi-20260331-182013`
 - Image pull secret: `harbor-creds`
-- PVC mount: `lucas-data` -> `/data`
+- No shared `lucas-data` PVC mount
 
 Current non-secret env:
 
-- `TARGET_NAMESPACE=all`
-- `TARGET_NAMESPACES=all`
+- `TARGET_NAMESPACE=default`
+- `TARGET_NAMESPACES=default`
 - `POD_INCIDENT_TARGET_NAMESPACES=` (template default; empty falls back to `TARGET_NAMESPACE(S)`)
 - `POD_INCIDENT_TARGET_WORKLOADS=` (template default; empty means all workloads in the scoped namespaces)
-- `SRE_MODE=autonomous`
+- `SRE_MODE=watcher`
 - `LLM_BACKEND=openai-compatible`
 - `LLM_PROVIDER=openrouter`
 - `LLM_MODEL=stepfun/step-3.5-flash:free`
 - `LLM_BASE_URL=https://openrouter.ai/api/v1`
-- `SQLITE_PATH=/data/lucas.db`
+- `SQLITE_PATH=/tmp/lucas.db`
 - `SCAN_INTERVAL_SECONDS=3600`
-- `PROMPT_FILE=/app/master-prompt-interactive.md`
+- `PROMPT_FILE=/app/master-prompt-interactive-report.md`
 - `SLACK_EMERGENCY_ACTIONS_ENABLED=true`
-- `SLACK_ACTION_ALLOWED_CHANNELS=C0AKXN1PDEX`
+- `SLACK_ACTION_ALLOWED_CHANNELS=C0AKTLTBP4M`
 - `SLACK_ACTION_ALLOWED_USERS=`
 - `SLACK_ACTION_ALLOWED_NAMESPACES=`
 - `POSTGRES_HOST=lucas-postgres`
@@ -198,22 +198,22 @@ Workload:
 
 - Kubernetes object: `CronJob/a2w-lucas`
 - Schedule: `*/10 * * * *`
-- Image: `gdhb.goyoai.com/lukas/lucas:postgres-shadow`
+- Image: `gdhb.goyoai.com/lukas/lucas:report-full-multi-20260331-182013`
 - Image pull secret: `harbor-creds`
-- PVC mount: `lucas-data` -> `/data`
+- No shared `lucas-data` PVC mount
 
 Current non-secret env:
 
-- `TARGET_NAMESPACE=all`
+- `TARGET_NAMESPACE=default`
 - `TARGET_NAMESPACES=all`
 - `POD_INCIDENT_TARGET_NAMESPACES=` (template default; empty falls back to `TARGET_NAMESPACE(S)`)
 - `POD_INCIDENT_TARGET_WORKLOADS=` (template default; empty means all workloads in the scoped namespaces)
-- `SRE_MODE=autonomous`
+- `SRE_MODE=report`
 - `LLM_BACKEND=openai-compatible`
 - `LLM_PROVIDER=openrouter`
 - `LLM_MODEL=stepfun/step-3.5-flash:free`
 - `LLM_BASE_URL=https://openrouter.ai/api/v1`
-- `SQLITE_PATH=/data/lucas.db`
+- `SQLITE_PATH=/tmp/lucas.db`
 - `POSTGRES_HOST=lucas-postgres`
 - `POSTGRES_PORT=5432`
 - `POSTGRES_SSLMODE=disable`
@@ -233,7 +233,7 @@ Secret references:
 Workload:
 
 - Kubernetes object: `Deployment/dashboard`
-- Image: `gdhb.goyoai.com/lukas/lucas-dashboard:postgres`
+- Image: `gdhb.goyoai.com/lukas/lucas-dashboard:attention-pods-20260331-140150`
 - Image pull secret: `harbor-creds`
 - No shared `lucas-data` PVC mount
 

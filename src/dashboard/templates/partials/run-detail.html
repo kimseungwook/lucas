@@ -113,6 +113,43 @@
     </div>
     {{end}}
 
+    {{if .AttentionItems}}
+    <div class="mb-6">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-neutral-500">Pods Requiring Attention</h2>
+            {{if gt .AttentionHiddenCount 0}}
+            <span class="text-xs text-neutral-500">+ {{.AttentionHiddenCount}} more</span>
+            {{end}}
+        </div>
+        <div class="space-y-3">
+            {{range .AttentionItems}}
+            <div class="bg-white rounded-lg p-4 border border-neutral-300 hover:shadow-sm transition-shadow">
+                <div class="flex items-start justify-between gap-3 mb-2">
+                    <div>
+                        <div class="font-medium text-neutral-900">{{if .Namespace}}{{.Namespace}}/{{end}}{{.Pod}}</div>
+                        <div class="text-xs text-neutral-500 mt-1">
+                            {{if .Phase}}{{.Phase}}{{else}}Unknown{{end}}{{if .Reason}} / {{.Reason}}{{end}} / restarts={{.Restarts}}
+                        </div>
+                    </div>
+                    {{if .Severity}}
+                    <span class="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded">{{.Severity}}</span>
+                    {{end}}
+                </div>
+                {{if .Issue}}
+                <div class="text-sm text-red-600 mb-1">{{.Issue}}</div>
+                {{end}}
+                {{if .Recommendation}}
+                <div class="text-sm text-neutral-700">{{.Recommendation}}</div>
+                {{end}}
+                {{if .Source}}
+                <div class="text-xs text-neutral-400 mt-2">source: {{.Source}}</div>
+                {{end}}
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+
     <!-- Report -->
 
     {{if .Run.Report}}
