@@ -7,6 +7,7 @@ This document records the current non-secret runtime settings and secret referen
 - Secret values are intentionally omitted.
 - This document records effective runtime values and secret reference names.
 - Where a feature is not currently enabled in the live dev rollout, the template default is noted instead.
+- Use `docs/ops/current-handoff-state.md` for the active cross-session handoff record.
 
 ## Current live development target
 

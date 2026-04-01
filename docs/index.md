@@ -48,6 +48,7 @@ Planning and implementation specs for larger changes live in `docs/specs/`.
 - Human quick manual: `/manual`
 - Current platform technical state: `/specs/current-platform-state`
 - Current runtime settings: `/ops/current-runtime-settings`
+- Current handoff state: `/ops/current-handoff-state`
 
 ## Introduction
 
